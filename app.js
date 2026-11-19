@@ -134,7 +134,11 @@
       if (v === "chores") m.innerHTML = await viewChores(false);
       if (v === "shopping" || v === "todo") m.innerHTML = await viewList(v, false);
       if (DB.mode === "demo") setSync("demo");
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      $("#main").innerHTML = `<div class="card"><h2>⚠️ Couldn't load</h2><p class="err">${esc(e.message || e)}</p><p class="empty">${esc(e.hint || e.details || e.code || "")}</p><button class="btn" onclick="location.reload()">Retry</button> <button class="btn" id="signout">Sign out</button></div>`;
+      const so = $("#signout"); if (so && DB.sb) so.onclick = async () => { await DB.sb.auth.signOut(); location.reload(); };
+    }
   }
 
   async function viewHome() {
