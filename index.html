@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Family Hub">
+<meta name="theme-color" content="#14171c">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-512.png">
+<title>Family Hub</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <div class="clock"><span id="time">--:--</span><span id="date"></span></div>
+    <div id="weather" class="weather"></div>
+    <div id="sync" class="sync" title="Sync status"></div>
+  </header>
+  <nav class="rail">
+    <button data-view="home" class="active"><span>🏠</span>Home</button>
+    <button data-view="calendar"><span>📅</span>Calendar</button>
+    <button data-view="chores"><span>⭐</span>Chores</button>
+    <button data-view="shopping"><span>🛒</span>Shopping</button>
+    <button data-view="todo"><span>✅</span>To-do</button>
+  </nav>
+  <main id="main"></main>
+</div>
+
+<div id="saver" class="saver hidden">
+  <div class="saver-time" id="saverTime"></div>
+  <div class="saver-date" id="saverDate"></div>
+  <div class="saver-next" id="saverNext"></div>
+</div>
+
+<div id="login" class="login hidden">
+  <form id="loginForm">
+    <h1>Family Hub</h1>
+    <p>Sign in with the family account (one-off on each device).</p>
+    <input id="loginEmail" type="email" placeholder="Email" autocomplete="username" required>
+    <input id="loginPass" type="password" placeholder="Password" autocomplete="current-password" required>
+    <button type="submit">Sign in</button>
+    <p id="loginErr" class="err"></p>
+  </form>
+</div>
+
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="app.js"></script>
+</body>
+</html>
