@@ -97,7 +97,7 @@
     },
   };
 
-  const DB = C.SUPABASE_URL ? Cloud : Local;
+  const DB = C.SUPABASE_URL && C.SUPABASE_ANON_KEY ? Cloud : Local;
 
   /* ---------------- state + render ---------------- */
   const S = { view: "home", events: [], weekStart: mondayOf(new Date()), manage: false };
