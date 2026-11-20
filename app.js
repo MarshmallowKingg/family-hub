@@ -98,7 +98,8 @@
       }
       S.calError = null;
       if (data && data.error) { S.calError = data.error; return []; }
-      if (data && !(data.events || []).length) S.calError = "Connected, but no events found in " + ((data.calendars || []).join(", ") || "any calendar") + " for the next " + C.CALENDAR_DAYS + " days.";
+      if (data && !(data.calendars || []).length) S.calError = "Connected, but no calendars matched ICLOUD_CALENDARS. Calendars on the account: " + ((data.available || []).join(", ") || "none found");
+      else if (data && !(data.events || []).length) S.calError = "Connected to " + data.calendars.join(", ") + " but found no events in the next " + C.CALENDAR_DAYS + " days.";
       return data.events || [];
     },
   };

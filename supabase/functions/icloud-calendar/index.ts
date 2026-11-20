@@ -35,6 +35,7 @@ const first = (xml: string, name: string) => all(xml, name)[0];
 const decode = (s: string) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
 const abs = (base: string, href: string) => new URL(href.trim(), base).toString();
 
+let allNames: string[] = [];
 let cache: { at: number; key: string; data: unknown } | null = null;
 
 async function calendars() {
@@ -48,10 +49,12 @@ async function calendars() {
   const p3 = await dav(home, "PROPFIND",
     `<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><d:displayname/><d:resourcetype/><c:supported-calendar-component-set/></d:prop></d:propfind>`, "1");
   const want = (Deno.env.get("ICLOUD_CALENDARS") || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
-  return all(p3, "response")
-    .filter((r) => /calendar\s*\/?>/i.test(first(r, "resourcetype") || "") && /VEVENT/.test(r))
-    .map((r) => ({ url: abs(home, first(r, "href")), name: decode((first(r, "displayname") || "Calendar").trim()) }))
-    .filter((c) => !want.length || want.includes(c.name.toLowerCase()));
+  // resourcetype looks like <collection/><calendar xmlns="urn:ietf:params:xml:ns:caldav"/> (attributes vary)
+  const found = all(p3, "response")
+    .filter((r) => /<(?:[\w-]+:)?calendar[\s\/>]/i.test(first(r, "resourcetype") || "") && /VEVENT/.test(r))
+    .map((r) => ({ url: abs(home, first(r, "href")), name: decode((first(r, "displayname") || "Calendar").trim()) }));
+  allNames = found.map((c) => c.name);
+  return found.filter((c) => !want.length || want.includes(c.name.toLowerCase()));
 }
 
 const fmt = (d: Date) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
@@ -104,7 +107,7 @@ Deno.serve(async (req) => {
       const xml = await dav(c.url, "REPORT", body, "1");
       return all(xml, "calendar-data").flatMap((d) => parseICS(decode(d), c.name));
     }));
-    const data = { events: results.flat(), calendars: cals.map((c) => c.name), fetched: new Date().toISOString() };
+    const data = { events: results.flat(), calendars: cals.map((c) => c.name), available: allNames, fetched: new Date().toISOString() };
     cache = { at: Date.now(), key, data };
     return new Response(JSON.stringify(data), { headers: { ...CORS, "Content-Type": "application/json" } });
   } catch (e) {
