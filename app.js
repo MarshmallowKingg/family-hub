@@ -97,6 +97,8 @@
         S.calError = msg; return S.events || [];
       }
       S.calError = null;
+      if (data && data.error) { S.calError = data.error; return []; }
+      if (data && !(data.events || []).length) S.calError = "Connected, but no events found in " + ((data.calendars || []).join(", ") || "any calendar") + " for the next " + C.CALENDAR_DAYS + " days.";
       return data.events || [];
     },
   };
@@ -171,7 +173,7 @@
       cols += `<div class="d ${ymd(d) === today ? "today" : ""}"><h3>${DAYS[d.getDay()]} ${d.getDate()}</h3>${evs.map(evHTML).join("") || '<div class="empty">—</div>'}</div>`;
     }
     const title = `${ws.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${addDays(ws, 6).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
-    return `<div class="weeknav"><button class="btn" data-act="wk" data-n="-7">◀</button><button class="btn" data-act="wk" data-n="0">This week</button><button class="btn" data-act="wk" data-n="7">▶</button><h2>${title}</h2></div><div class="week">${cols}</div>`;
+    return `<div class="weeknav"><button class="btn" data-act="wk" data-n="-7">◀</button><button class="btn" data-act="wk" data-n="0">This week</button><button class="btn" data-act="wk" data-n="7">▶</button><h2>${title}</h2></div>${S.calError ? `<p class="err">Calendar: ${esc(S.calError)}</p>` : ""}<div class="week">${cols}</div>`;
   }
 
   async function viewChores(mini) {
