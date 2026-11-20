@@ -22,7 +22,7 @@ async function dav(url: string, method: string, body: string, depth = "0") {
     body,
     redirect: "follow",
   });
-  if (!r.ok && r.status !== 207) throw new Error(`${method} ${url} -> ${r.status}`);
+  if (!r.ok && r.status !== 207) throw new Error(`${method} ${url} -> ${r.status}${r.status === 401 ? " (iCloud rejected the email/app-specific password)" : ""}`);
   return await r.text();
 }
 
@@ -37,7 +37,10 @@ let cache: { at: number; key: string; data: unknown } | null = null;
 
 async function calendars() {
   const p1 = await dav(ROOT + "/", "PROPFIND", `<d:propfind xmlns:d="DAV:"><d:prop><d:current-user-principal/></d:prop></d:propfind>`);
-  const principal = abs(ROOT, first(first(p1, "current-user-principal"), "href"));
+  if (!Deno.env.get("ICLOUD_USER") || !Deno.env.get("ICLOUD_APP_PASSWORD")) throw new Error("ICLOUD_USER / ICLOUD_APP_PASSWORD secrets not set");
+  const cup = first(p1, "current-user-principal");
+  if (!cup) throw new Error("No principal in iCloud reply: " + p1.slice(0, 300));
+  const principal = abs(ROOT, first(cup, "href"));
   const p2 = await dav(principal, "PROPFIND", `<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><c:calendar-home-set/></d:prop></d:propfind>`);
   const home = abs(principal, first(first(p2, "calendar-home-set"), "href"));
   const p3 = await dav(home, "PROPFIND",
@@ -103,6 +106,7 @@ Deno.serve(async (req) => {
     cache = { at: Date.now(), key, data };
     return new Response(JSON.stringify(data), { headers: { ...CORS, "Content-Type": "application/json" } });
   } catch (e) {
+    console.error("icloud-calendar failed:", String(e));
     return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });
   }
 });

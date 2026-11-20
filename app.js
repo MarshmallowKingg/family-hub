@@ -92,7 +92,11 @@
     },
     async events() {
       const { data, error } = await Cloud.sb.functions.invoke("icloud-calendar", { body: { days: C.CALENDAR_DAYS } });
-      if (error) { console.warn("calendar", error); return S.events || []; }
+      if (error) {
+        let msg = error.message; try { const b = await error.context.json(); msg = b.error || msg; } catch (e) {}
+        S.calError = msg; return S.events || [];
+      }
+      S.calError = null;
       return data.events || [];
     },
   };
@@ -149,8 +153,9 @@
       agenda += `<div class="day-h ${i === 0 ? "today" : ""}">${dayLabel(d)}</div>` + (evs.length ? evs.map(evHTML).join("") : `<div class="empty">Nothing planned</div>`);
     }
     const [chores, shop, todo] = await Promise.all([viewChores(true), viewList("shopping", true), viewList("todo", true)]);
+    const calErr = S.calError ? `<p class="err">Calendar: ${esc(S.calError)}</p>` : "";
     return `<div class="grid2">
-      <div class="col"><div class="card" style="flex:1"><h2>📅 Coming up</h2>${agenda}</div></div>
+      <div class="col"><div class="card" style="flex:1"><h2>📅 Coming up</h2>${calErr}${agenda}</div></div>
       <div class="col">
         <div class="card">${chores}</div>
         <div class="card" style="flex:1">${shop}</div>
