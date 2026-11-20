@@ -41,19 +41,29 @@ main{overflow:auto;padding:18px 22px;-webkit-overflow-scrolling:touch}
 /* agenda */
 .day-h{font-size:15px;color:var(--muted);margin:12px 0 6px;text-transform:uppercase;letter-spacing:.04em}
 .day-h.today{color:var(--accent)}
-.ev{display:flex;gap:12px;align-items:center;padding:9px 12px;border-radius:12px;background:var(--panel2);margin-bottom:6px}
+.ev{display:flex;gap:12px;align-items:center;padding:9px 12px;border-radius:12px;background:var(--panel2);margin-bottom:6px;border-left:5px solid var(--c,var(--accent))}
 .ev .t{font-variant-numeric:tabular-nums;color:var(--muted);min-width:96px;font-size:15px}
-.ev .bar{width:5px;align-self:stretch;border-radius:4px;background:var(--accent)}
-.ev .cal{margin-left:auto;font-size:13px;color:var(--muted)}
+.ev .what{min-width:0}
+.ev .loc{font-size:13px;color:var(--muted);margin-top:2px}
+.ev .cal{margin-left:auto;font-size:13px;color:var(--muted);flex:none}
+.days4{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:14px;flex:1;min-height:0}
+.dayc{padding:12px 14px}.dayc .day-h{margin-top:0}
+.dayc .ev{flex-direction:column;align-items:flex-start;gap:2px;padding:8px 10px}
+.dayc .ev .t{min-width:0;font-size:13px}.dayc .ev .cal{display:none}
+.dayc.today{outline:2px solid var(--accent)}
 .empty{color:var(--muted);padding:6px 2px}
 
 /* week */
-.week{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;height:calc(100% - 52px)}
+.weeks{display:grid;grid-template-rows:1fr 1fr;gap:10px;height:calc(100% - 52px)}
+.week{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;min-height:0}
 .week .d{background:var(--panel);border-radius:14px;padding:10px;overflow:auto}
 .week .d.today{outline:2px solid var(--accent)}
 .week .d h3{margin:0 0 8px;font-size:15px;color:var(--muted)}
 .week .ev{flex-direction:column;align-items:flex-start;gap:2px;padding:7px 9px;font-size:14px}
 .week .ev .t{min-width:0;font-size:12px}
+.week .ev .cal{display:none}
+.week .ev .loc{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.week .ev .what{width:100%}
 .weeknav{display:flex;gap:10px;align-items:center;margin-bottom:12px}
 .weeknav h2{margin:0 auto 0 8px;font-size:20px}
 

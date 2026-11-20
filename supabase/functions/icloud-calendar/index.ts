@@ -74,7 +74,7 @@ function parseICS(ics: string, calendar: string) {
         out.push({
           title: (ev.SUMMARY || "(no title)").replace(/\\,/g, ",").replace(/\\;/g, ";").replace(/\\n/g, " "),
           start: conv(ev.DTSTART), end: conv(ev.DTEND || ev.DTSTART), allDay, calendar,
-          location: ev.LOCATION?.replace(/\\,/g, ",") || null,
+          location: ev.LOCATION ? ev.LOCATION.replace(/\\n/gi, ", ").replace(/\\([,;\\])/g, "$1").trim() : null,
         });
       }
       ev = null;

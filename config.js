@@ -8,6 +8,6 @@ window.HUB_CONFIG = {
   NIGHT_START: "22:00",      // Clock screen stays on overnight between these times
   NIGHT_END: "06:30",
   CHILD_NAME: "Rae",
-  CALENDAR_DAYS: 14,         // How far ahead to fetch iCloud events
+  CALENDAR_DAYS: 35,         // How far ahead to fetch iCloud events
   CALENDAR_REFRESH_MIN: 10
 };

@@ -39,6 +39,7 @@
     async chores() { return Local._get("chores", []).sort((a, b) => a.sort - b.sort); },
     async addChore(c) { const a = Local._get("chores", []); a.push({ id: uid(), sort: a.length + 1, ...c }); Local._set("chores", a); },
     async deleteChore(id) { Local._set("chores", Local._get("chores", []).filter((c) => c.id !== id)); },
+    async updateChore(id, patch) { Local._set("chores", Local._get("chores", []).map((c) => (c.id === id ? { ...c, ...patch } : c))); },
     async choreLog(from) { return Local._get("chore_log", []).filter((l) => l.date >= from); },
     async toggleChore(chore_id, date) {
       const a = Local._get("chore_log", []); const i = a.findIndex((l) => l.chore_id === chore_id && l.date === date);
@@ -47,7 +48,7 @@
     async events() {
       const t = startOfDay(new Date()); const mk = (d, h, m, mins, title, cal) => { const s = addDays(t, d); s.setHours(h, m); return { title, start: s.toISOString(), end: new Date(+s + mins * 60000).toISOString(), allDay: false, calendar: cal }; };
       const ad = (d, title, cal) => ({ title, start: ymd(addDays(t, d)), end: ymd(addDays(t, d + 1)), allDay: true, calendar: cal });
-      return [mk(0, 9, 30, 60, "Demo: Swimming", "Family"), mk(0, 18, 0, 90, "Demo: Tea at Nan's", "Family"), ad(1, "Demo: Bin day (green)", "Home"), mk(2, 19, 0, 120, "Demo: Cricket committee", "Lewis"), mk(4, 10, 0, 45, "Demo: Vets – Stitch", "Family")];
+      return [{ ...mk(0, 9, 30, 60, "Demo: Swimming", "Family"), location: "Wakefield Sun Lane Leisure Centre" }, mk(0, 18, 0, 90, "Demo: Tea at Nan's", "Family"), ad(1, "Demo: Bin day (green)", "Home"), mk(2, 19, 0, 120, "Demo: Cricket committee", "Lewis"), mk(4, 10, 0, 45, "Demo: Vets – Stitch", "Family")];
     },
   };
 
@@ -84,6 +85,7 @@
     async chores() { return Cloud._q(Cloud.sb.from("chores").select("*").eq("active", true).order("sort")); },
     async addChore(c) { await Cloud._q(Cloud.sb.from("chores").insert(c)); },
     async deleteChore(id) { await Cloud._q(Cloud.sb.from("chores").update({ active: false }).eq("id", id)); },
+    async updateChore(id, patch) { await Cloud._q(Cloud.sb.from("chores").update(patch).eq("id", id)); },
     async choreLog(from) { return Cloud._q(Cloud.sb.from("chore_log").select("*").gte("date", from)); },
     async toggleChore(chore_id, date) {
       const ex = await Cloud._q(Cloud.sb.from("chore_log").select("id").eq("chore_id", chore_id).eq("date", date));
@@ -106,6 +108,19 @@
 
   const DB = C.SUPABASE_URL && C.SUPABASE_ANON_KEY ? Cloud : Local;
 
+  /* ---------------- chore schedules ----------------
+     chore.days = original days; chore.schedule = [{from:"YYYY-MM-DD", days:[...]}] changes that apply from that date on.
+     Past days keep whatever schedule was in force then. */
+  function daysFor(c, ds) {
+    let d = c.days || [];
+    for (const s of (c.schedule || []).slice().sort((a, b) => (a.from < b.from ? -1 : 1))) if (s.from <= ds) d = s.days;
+    return d;
+  }
+  function withSchedule(c, days) {
+    const today = ymd(new Date());
+    return [...(c.schedule || []).filter((s) => s.from !== today), { from: today, days }];
+  }
+
   /* ---------------- state + render ---------------- */
   const S = { view: "home", events: [], weekStart: mondayOf(new Date()), manage: false };
 
@@ -123,7 +138,8 @@
   const calColour = (name) => { let h = 0; for (const c of name || "") h = (h * 31 + c.charCodeAt(0)) % 360; return `hsl(${h} 70% 62%)`; };
   function evHTML(e) {
     const t = e.allDay ? "All day" : `${hm(new Date(e.start))}–${hm(new Date(e.end))}`;
-    return `<div class="ev"><div class="bar" style="background:${calColour(e.calendar)}"></div><div class="t">${t}</div><div>${esc(e.title)}</div>${e.calendar ? `<div class="cal">${esc(e.calendar)}</div>` : ""}</div>`;
+    const loc = e.location ? `<div class="loc">📍 ${esc(e.location)}</div>` : "";
+    return `<div class="ev" style="--c:${calColour(e.calendar)}"><div class="t">${t}</div><div class="what"><div class="ttl">${esc(e.title)}</div>${loc}</div>${e.calendar ? `<div class="cal">${esc(e.calendar)}</div>` : ""}</div>`;
   }
   function dayLabel(d) {
     const t = startOfDay(new Date());
@@ -149,16 +165,15 @@
   }
 
   async function viewHome() {
-    let agenda = "";
-    for (let i = 0; i < 7; i++) {
+    let days4 = "";
+    for (let i = 0; i < 4; i++) {
       const d = addDays(new Date(), i), evs = eventsOn(d);
-      if (i > 1 && !evs.length) continue;
-      agenda += `<div class="day-h ${i === 0 ? "today" : ""}">${dayLabel(d)}</div>` + (evs.length ? evs.map(evHTML).join("") : `<div class="empty">Nothing planned</div>`);
+      days4 += `<div class="card dayc ${i === 0 ? "today" : ""}"><div class="day-h ${i === 0 ? "today" : ""}">${dayLabel(d)}</div>${evs.length ? evs.map(evHTML).join("") : `<div class="empty">Nothing planned</div>`}</div>`;
     }
     const [chores, shop, todo] = await Promise.all([viewChores(true), viewList("shopping", true), viewList("todo", true)]);
     const calErr = S.calError ? `<p class="err">Calendar: ${esc(S.calError)}</p>` : "";
     return `<div class="grid2">
-      <div class="col"><div class="card" style="flex:1"><h2>📅 Coming up</h2>${calErr}${agenda}</div></div>
+      <div class="col">${calErr}<div class="days4">${days4}</div></div>
       <div class="col">
         <div class="card">${chores}</div>
         <div class="card" style="flex:1">${shop}</div>
@@ -168,13 +183,17 @@
 
   function viewWeek() {
     const ws = S.weekStart, today = ymd(new Date());
-    let cols = "";
-    for (let i = 0; i < 7; i++) {
-      const d = addDays(ws, i), evs = eventsOn(d);
-      cols += `<div class="d ${ymd(d) === today ? "today" : ""}"><h3>${DAYS[d.getDay()]} ${d.getDate()}</h3>${evs.map(evHTML).join("") || '<div class="empty">—</div>'}</div>`;
-    }
-    const title = `${ws.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${addDays(ws, 6).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
-    return `<div class="weeknav"><button class="btn" data-act="wk" data-n="-7">◀</button><button class="btn" data-act="wk" data-n="0">This week</button><button class="btn" data-act="wk" data-n="7">▶</button><h2>${title}</h2></div>${S.calError ? `<p class="err">Calendar: ${esc(S.calError)}</p>` : ""}<div class="week">${cols}</div>`;
+    const row = (start) => {
+      let c = "";
+      for (let i = 0; i < 7; i++) {
+        const d = addDays(start, i), evs = eventsOn(d);
+        c += `<div class="d ${ymd(d) === today ? "today" : ""}"><h3>${DAYS[d.getDay()]} ${d.getDate()}${d.getDate() === 1 || i === 0 ? " " + d.toLocaleDateString("en-GB", { month: "short" }) : ""}</h3>${evs.map(evHTML).join("") || '<div class="empty">—</div>'}</div>`;
+      }
+      return `<div class="week">${c}</div>`;
+    };
+    const cols = row(ws) + row(addDays(ws, 7));
+    const title = `${ws.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${addDays(ws, 13).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
+    return `<div class="weeknav"><button class="btn" data-act="wk" data-n="-7">◀</button><button class="btn" data-act="wk" data-n="0">Today</button><button class="btn" data-act="wk" data-n="7">▶</button><h2>${title}</h2></div>${S.calError ? `<p class="err">Calendar: ${esc(S.calError)}</p>` : ""}<div class="weeks">${cols}</div>`;
   }
 
   async function viewChores(mini) {
@@ -182,7 +201,7 @@
     const ws = mondayOf(today);
     const [chores, log] = await Promise.all([DB.chores(), DB.choreLog(ymd(ws))]);
     const done = new Set(log.map((l) => l.chore_id + "|" + l.date));
-    const todays = chores.filter((c) => (c.days || []).includes(wd));
+    const todays = chores.filter((c) => daysFor(c, tk).includes(wd));
     const weekStars = log.length;
     const tiles = todays.map((c) => `<button class="chore ${done.has(c.id + "|" + tk) ? "done" : ""}" data-act="chore" data-id="${c.id}"><div class="e">${esc(c.emoji)}</div><div class="n">${esc(c.name)}</div></button>`).join("") || `<div class="empty">No jobs today 🎉</div>`;
     const head = `<h2>⭐ ${esc(C.CHILD_NAME)}'s jobs today<span class="spacer"></span><span class="stars">${"★".repeat(Math.min(weekStars, 30))}</span><span class="pill">${weekStars} this week</span></h2>`;
@@ -190,15 +209,18 @@
     // weekly chart
     let rows = "";
     for (const c of chores) {
-      rows += `<tr><td>${esc(c.emoji)} ${esc(c.name)}</td>` + [0, 1, 2, 3, 4, 5, 6].map((i) => { const d = addDays(ws, i); return `<td>${!(c.days || []).includes(d.getDay()) ? "·" : done.has(c.id + "|" + ymd(d)) ? "⭐" : "○"}</td>`; }).join("") + "</tr>";
+      const cells = [0, 1, 2, 3, 4, 5, 6].map((i) => { const d = addDays(ws, i), ds = ymd(d); return done.has(c.id + "|" + ds) ? "⭐" : daysFor(c, ds).includes(d.getDay()) ? "○" : "·"; });
+      if (cells.every((x) => x === "·")) continue; // not scheduled this week
+      rows += `<tr><td>${esc(c.emoji)} ${esc(c.name)}</td>${cells.map((x) => `<td>${x}</td>`).join("")}</tr>`;
     }
     const chart = `<table class="wk"><tr><th>This week</th>${[0, 1, 2, 3, 4, 5, 6].map((i) => `<th>${DAYS[addDays(ws, i).getDay()]}</th>`).join("")}</tr>${rows}</table>`;
     let manage = `<button class="btn" data-act="manage">${S.manage ? "Done" : "Edit jobs"}</button>`;
     if (S.manage) {
-      manage += `<div class="manage card">` + chores.map((c) => `<div class="row">${esc(c.emoji)} ${esc(c.name)} <span class="pill">${(c.days || []).map((d) => DAYS[d]).join(" ")}</span><span class="spacer" style="flex:1"></span><button class="btn" data-act="delchore" data-id="${c.id}">Remove</button></div>`).join("") +
-        `<div class="row"><input id="cEmoji" placeholder="🧹" style="width:70px"><input id="cName" placeholder="New job" style="flex:1">` +
-        [1, 2, 3, 4, 5, 6, 0].map((d) => `<button class="dayt on" data-act="dayt" data-d="${d}">${DAYS[d]}</button>`).join("") +
-        `<button class="btn primary" data-act="addchore">Add</button></div></div>`;
+      const dayBtns = (scope, on) => [1, 2, 3, 4, 5, 6, 0].map((d) => `<button class="dayt ${on.includes(d) ? "on" : ""}" data-act="dayt" data-scope="${scope}" data-d="${d}">${DAYS[d]}</button>`).join("");
+      manage += `<div class="manage card"><p class="empty">Day changes apply from today onwards. Past stars and days stay as they were.</p>` +
+        chores.filter((c) => daysFor(c, tk).length).map((c) => `<div class="row"><span style="min-width:190px">${esc(c.emoji)} ${esc(c.name)}</span>${dayBtns(c.id, daysFor(c, tk))}<span style="flex:1"></span><button class="btn primary" data-act="savechore" data-id="${c.id}">Save</button><button class="btn" data-act="delchore" data-id="${c.id}">Remove</button></div>`).join("") +
+        `<div class="row"><input id="cEmoji" placeholder="🧹" style="width:70px"><input id="cName" placeholder="New job" style="width:120px">` + dayBtns("new", [0, 1, 2, 3, 4, 5, 6]) +
+        `<span style="flex:1"></span><button class="btn primary" data-act="addchore">Add</button></div></div>`;
     }
     return `<div class="card">${head}<div class="chores">${tiles}</div></div><div class="card" style="margin-top:18px">${chart}</div><div class="manage">${manage}</div>`;
   }
@@ -207,6 +229,7 @@
     const items = await DB.items(list);
     const open = items.filter((i) => !i.done), ticked = items.filter((i) => i.done);
     const title = list === "shopping" ? "🛒 Shopping" : "✅ To-do";
+    if (list === "shopping") S.shopOpen = open.map((i) => i.text);
     const row = (i) => `<div class="item ${i.done ? "done" : ""}" data-act="tick" data-id="${i.id}" data-done="${i.done}"><div class="tick">${i.done ? "✓" : ""}</div><div class="txt">${esc(i.text)}</div>${mini ? "" : `<button class="del" data-act="del" data-id="${i.id}">✕</button>`}</div>`;
     if (mini) {
       return `<h2>${title}<span class="spacer"></span><span class="pill">${open.length} left</span></h2>` +
@@ -220,7 +243,8 @@
       const top = Object.entries(counts).filter(([k]) => !onList.has(k)).sort((a, b) => b[1] - a[1]).slice(0, 12);
       if (top.length) chips = `<div class="chips">${top.map(([k]) => `<button class="chip" data-act="quick" data-t="${esc(k)}">+ ${esc(k)}</button>`).join("")}</div>`;
     }
-    return `<div class="card"><h2>${title}<span class="spacer"></span>${ticked.length ? `<button class="btn" data-act="clear" data-list="${list}">Clear ticked (${ticked.length})</button>` : ""}</h2>
+    const exp = list === "shopping" && open.length ? `<button class="btn primary" data-act="export">📤 Export to Notes</button> ` : "";
+    return `<div class="card"><h2>${title}<span class="spacer"></span>${exp}${ticked.length ? `<button class="btn" data-act="clear" data-list="${list}">Clear ticked (${ticked.length})</button>` : ""}</h2>
       <form class="addrow" data-list="${list}"><input name="t" placeholder="${list === "shopping" ? "Add item…" : "Add a to-do…"}" autocomplete="off" enterkeyhint="done"><button class="btn primary">Add</button></form>
       ${chips}${open.map(row).join("")}${ticked.map(row).join("")}</div>`;
   }
@@ -239,10 +263,16 @@
     else if (act === "wk") { S.weekStart = +a.dataset.n === 0 ? mondayOf(new Date()) : addDays(S.weekStart, +a.dataset.n); }
     else if (act === "manage") S.manage = !S.manage;
     else if (act === "dayt") { a.classList.toggle("on"); return; }
-    else if (act === "delchore") await DB.deleteChore(id);
+    else if (act === "savechore" || act === "delchore") {
+      const c = (await DB.chores()).find((x) => x.id === id); if (!c) return;
+      const days = act === "delchore" ? [] : [...document.querySelectorAll(`.dayt.on[data-scope="${id}"]`)].map((b) => +b.dataset.d);
+      await DB.updateChore(id, { schedule: withSchedule(c, days) });
+      toast(act === "delchore" ? `Removed ${c.name} from today on` : `${c.name} updated from today`);
+    }
+    else if (act === "export") { exportShopping(); return; }
     else if (act === "addchore") {
       const name = $("#cName").value.trim(); if (!name) return;
-      const days = [...document.querySelectorAll(".dayt.on")].map((b) => +b.dataset.d);
+      const days = [...document.querySelectorAll('.dayt.on[data-scope="new"]')].map((b) => +b.dataset.d);
       await DB.addChore({ name, emoji: $("#cEmoji").value.trim() || "⭐", days });
     }
     render();
@@ -253,6 +283,15 @@
     await DB.addItem(f.dataset.list, t); f.t.value = ""; await render();
     const inp = document.querySelector(`.addrow[data-list="${f.dataset.list}"] input`); inp && inp.focus();
   });
+
+  // Share sheet -> Notes. Must run synchronously inside the tap, so it uses the list already on screen.
+  function exportShopping() {
+    const items = S.shopOpen || []; if (!items.length) return;
+    const title = "Shopping " + new Date().toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+    const text = title + "\n" + items.join("\n");
+    if (navigator.share) navigator.share({ text }).catch(() => {});
+    else if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => toast("Copied – paste into Notes"));
+  }
 
   function cheer() {
     const el = document.createElement("div");

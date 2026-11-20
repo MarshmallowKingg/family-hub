@@ -66,3 +66,6 @@ select * from (values
 grant usage on schema public to authenticated;
 grant select, insert, update, delete on all tables in schema public to authenticated;
 alter default privileges in schema public grant select, insert, update, delete on tables to authenticated;
+
+-- v2: chore day changes apply from a date onwards (keeps past history intact)
+alter table chores add column if not exists schedule jsonb not null default '[]';
