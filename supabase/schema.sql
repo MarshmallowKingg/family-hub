@@ -61,3 +61,8 @@ select * from (values
   ('Feed Stitch','🐶','{1,3,5}'::int[],3),
   ('Feed Hugo','🐱','{0,2,4,6}'::int[],4)
 ) v where not exists (select 1 from chores);
+
+-- Newer Supabase projects don't auto-grant table access to signed-in users
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+alter default privileges in schema public grant select, insert, update, delete on tables to authenticated;
