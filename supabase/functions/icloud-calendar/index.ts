@@ -12,7 +12,9 @@ const CORS = {
 const ROOT = "https://caldav.icloud.com";
 
 function auth() {
-  return "Basic " + btoa(`${Deno.env.get("ICLOUD_USER")}:${Deno.env.get("ICLOUD_APP_PASSWORD")}`);
+  const u = (Deno.env.get("ICLOUD_USER") || "").trim().toLowerCase();
+  const p = (Deno.env.get("ICLOUD_APP_PASSWORD") || "").replace(/\s+/g, "").toLowerCase();
+  return "Basic " + btoa(`${u}:${p}`);
 }
 
 async function dav(url: string, method: string, body: string, depth = "0") {
@@ -22,7 +24,7 @@ async function dav(url: string, method: string, body: string, depth = "0") {
     body,
     redirect: "follow",
   });
-  if (!r.ok && r.status !== 207) throw new Error(`${method} ${url} -> ${r.status}${r.status === 401 ? " (iCloud rejected the email/app-specific password)" : ""}`);
+  if (!r.ok && r.status !== 207) throw new Error(`${method} ${url} -> ${r.status}${r.status === 401 || r.status === 403 ? " (iCloud rejected the email/app-specific password)" : ""}`);
   return await r.text();
 }
 
