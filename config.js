@@ -9,5 +9,5 @@ window.HUB_CONFIG = {
   NIGHT_END: "06:30",
   CHILD_NAME: "Rae",
   CALENDAR_DAYS: 35,         // How far ahead to fetch iCloud events
-  CALENDAR_REFRESH_MIN: 10
+  CALENDAR_REFRESH_MIN: 3
 };

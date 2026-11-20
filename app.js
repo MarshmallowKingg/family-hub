@@ -1,6 +1,7 @@
 /* Family Hub — single-page app. Vanilla JS, no build step. */
 (function () {
   "use strict";
+  const APP_VERSION = "8"; // bump with version.json on every release so kiosks reload themselves
   const C = window.HUB_CONFIG;
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -70,11 +71,21 @@
       });
     },
     subscribe(cb) {
-      let t; const deb = () => { clearTimeout(t); t = setTimeout(cb, 250); };
-      Cloud.sb.channel("hub").on("postgres_changes", { event: "*", schema: "public" }, deb)
-        .subscribe((s) => setSync(s === "SUBSCRIBED" ? "ok" : s === "CHANNEL_ERROR" || s === "TIMED_OUT" ? "err" : ""));
-      // iOS can drop websockets while asleep: refresh when the page comes back.
-      document.addEventListener("visibilitychange", () => { if (!document.hidden) cb(); });
+      let t, ch, retry; const deb = () => { clearTimeout(t); t = setTimeout(cb, 250); };
+      // Live channel that rebuilds itself if it ever drops (Wi-Fi blip, router restart, token renewal).
+      const connect = () => {
+        clearTimeout(retry);
+        if (ch) Cloud.sb.removeChannel(ch);
+        ch = Cloud.sb.channel("hub-" + Date.now()).on("postgres_changes", { event: "*", schema: "public" }, deb)
+          .subscribe((st) => {
+            if (st === "SUBSCRIBED") { setSync("ok"); cb(); } // catch anything missed while disconnected
+            else if (st === "CHANNEL_ERROR" || st === "TIMED_OUT" || st === "CLOSED") { setSync("err"); retry = setTimeout(connect, 5000); }
+          });
+      };
+      connect();
+      Cloud.sb.auth.onAuthStateChange((ev, session) => { if (ev === "TOKEN_REFRESHED" && session) Cloud.sb.realtime.setAuth(session.access_token); });
+      window.addEventListener("online", connect);
+      document.addEventListener("visibilitychange", () => { if (!document.hidden) connect(); });
     },
     async _q(p) { const { data, error } = await p; if (error) { setSync("err"); throw error; } return data; },
     async items(list) { return Cloud._q(Cloud.sb.from("items").select("*").eq("list", list).order("created_at")); },
@@ -148,6 +159,15 @@
     const base = d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" });
     return diff === 0 ? "Today · " + base : diff === 1 ? "Tomorrow · " + base : base;
   }
+
+  // Background refreshes wait while someone is typing or a popup is open.
+  let pending = false;
+  function safeRender() {
+    const a = document.activeElement;
+    if ((a && a.tagName === "INPUT" && $("#main").contains(a)) || $("#pop")) { pending = true; return; }
+    pending = false; render();
+  }
+  document.addEventListener("focusout", () => setTimeout(() => { if (pending) safeRender(); }, 300));
 
   async function render() {
     try {
@@ -272,7 +292,7 @@
     }
     else if (act === "export") { exportShopping(); return; }
     else if (act === "ev") { showTravel(S.events[+a.dataset.i]); return; }
-    else if (act === "closepop") { $("#pop").remove(); return; }
+    else if (act === "closepop") { $("#pop").remove(); if (pending) safeRender(); return; }
     else if (act === "noop") return;
     else if (act === "addchore") {
       const name = $("#cName").value.trim(); if (!name) return;
@@ -367,7 +387,15 @@
     } catch (e) { console.warn("weather", e); }
   }
 
-  async function loadEvents() { try { S.events = await DB.events(); render(); } catch (e) { console.warn(e); } }
+  async function loadEvents() { try { S.events = await DB.events(); safeRender(); } catch (e) { console.warn(e); } }
+
+  // Self-update: if a newer version has been published, reload (only when nobody is mid-task).
+  async function checkVersion() {
+    try {
+      const v = (await (await fetch("version.json?t=" + Date.now(), { cache: "no-store" })).json()).v;
+      if (v && v !== APP_VERSION && !pending && !$("#pop")) location.replace(location.pathname + "?v=" + v);
+    } catch (e) {}
+  }
 
   let lastTouch = Date.now();
   const minsOf = (s) => { const [h, m] = s.split(":").map(Number); return h * 60 + m; };
@@ -388,11 +416,14 @@
   (async function boot() {
     setSync("");
     await DB.init();
-    DB.subscribe(render);
+    DB.subscribe(safeRender);
     keepAwake();
     tick(); setInterval(tick, 1000 * 15);
     weather(); setInterval(weather, 30 * 60000);
     await loadEvents(); setInterval(loadEvents, C.CALENDAR_REFRESH_MIN * 60000);
+    setInterval(safeRender, 60000);                 // safety net: re-read lists/chores every minute
+    setInterval(checkVersion, 5 * 60000);           // pick up new releases automatically
+    setInterval(() => { const n = new Date(); if (n.getHours() === 3 && n.getMinutes() < 5) location.reload(); }, 5 * 60000); // fresh start nightly
     render();
   })();
 })();

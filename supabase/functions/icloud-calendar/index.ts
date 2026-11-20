@@ -99,7 +99,7 @@ Deno.serve(async (req) => {
   try {
     const { days = 14 } = await req.json().catch(() => ({}));
     const key = String(days);
-    if (cache && cache.key === key && Date.now() - cache.at < 5 * 60_000) {
+    if (cache && cache.key === key && Date.now() - cache.at < 60_000) {
       return new Response(JSON.stringify(cache.data), { headers: { ...CORS, "Content-Type": "application/json" } });
     }
     const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - 7);
