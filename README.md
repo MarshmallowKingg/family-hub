@@ -33,3 +33,6 @@ In demo mode, data stays on that one device and the sync dot is orange.
 - Settings > Display & Brightness: turn Auto-Brightness on and True Tone off.
 - After 3 minutes idle the app shows a dim clock, and it does the same overnight (22:00–06:30). Tap to wake. These times are set in `config.js`.
 - Battery: put the charger on a smart plug that runs about 2 hours, twice a day, so the iPad isn't held at 100% around the clock.
+
+## 5. Journey times (Google Routes API)
+Function `travel`, with secrets `GOOGLE_MAPS_KEY` (an API key restricted to the Routes API) and `HOME_ADDRESS`.

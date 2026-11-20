@@ -74,11 +74,18 @@ function parseICS(ics: string, calendar: string) {
         out.push({
           title: (ev.SUMMARY || "(no title)").replace(/\\,/g, ",").replace(/\\;/g, ";").replace(/\\n/g, " "),
           start: conv(ev.DTSTART), end: conv(ev.DTEND || ev.DTSTART), allDay, calendar,
+          lat: ev.GEO_LAT ? Number(ev.GEO_LAT) : null,
+          lon: ev.GEO_LON ? Number(ev.GEO_LON) : null,
           location: ev.LOCATION ? ev.LOCATION.replace(/\\n/gi, ", ").replace(/\\([,;\\])/g, "$1").trim() : null,
         });
       }
       ev = null;
     } else if (ev) {
+      if (line.startsWith("X-APPLE-STRUCTURED-LOCATION")) {
+        const g = line.match(/geo:(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/i);
+        if (g) { ev.GEO_LAT = g[1]; ev.GEO_LON = g[2]; }
+        continue;
+      }
       const i = line.indexOf(":"); if (i < 0) continue;
       const [name, ...params] = line.slice(0, i).split(";");
       if (!(name in ev)) { ev[name] = line.slice(i + 1); if (params.length) ev[name + "_P"] = params.join(";"); }

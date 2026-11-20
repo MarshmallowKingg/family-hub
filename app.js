@@ -139,7 +139,8 @@
   function evHTML(e) {
     const t = e.allDay ? "All day" : `${hm(new Date(e.start))}–${hm(new Date(e.end))}`;
     const loc = e.location ? `<div class="loc">📍 ${esc(e.location)}</div>` : "";
-    return `<div class="ev" style="--c:${calColour(e.calendar)}"><div class="t">${t}</div><div class="what"><div class="ttl">${esc(e.title)}</div>${loc}</div>${e.calendar ? `<div class="cal">${esc(e.calendar)}</div>` : ""}</div>`;
+    const tap = e.location ? ` data-act="ev" data-i="${S.events.indexOf(e)}"` : "";
+    return `<div class="ev ${e.location ? "has-loc" : ""}"${tap} style="--c:${calColour(e.calendar)}"><div class="t">${t}</div><div class="what"><div class="ttl">${esc(e.title)}</div>${loc}</div>${e.calendar ? `<div class="cal">${esc(e.calendar)}</div>` : ""}</div>`;
   }
   function dayLabel(d) {
     const t = startOfDay(new Date());
@@ -270,6 +271,9 @@
       toast(act === "delchore" ? `Removed ${c.name} from today on` : `${c.name} updated from today`);
     }
     else if (act === "export") { exportShopping(); return; }
+    else if (act === "ev") { showTravel(S.events[+a.dataset.i]); return; }
+    else if (act === "closepop") { $("#pop").remove(); return; }
+    else if (act === "noop") return;
     else if (act === "addchore") {
       const name = $("#cName").value.trim(); if (!name) return;
       const days = [...document.querySelectorAll('.dayt.on[data-scope="new"]')].map((b) => +b.dataset.d);
@@ -291,6 +295,40 @@
     const text = title + "\n" + items.join("\n");
     if (navigator.share) navigator.share({ text }).catch(() => {});
     else if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => toast("Copied – paste into Notes"));
+  }
+
+  /* ---------------- travel time popup ---------------- */
+  const dur = (s) => { const m = Math.round(s / 60); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`; };
+  const dist = (m) => m == null ? "" : ` · ${(m / 1609.34).toFixed(m < 16093 ? 1 : 0)} mi`;
+  async function showTravel(e) {
+    if (!e) return;
+    const old = $("#pop"); if (old) old.remove();
+    const when = e.allDay ? "All day" : `${dayLabel(new Date(e.start)).split(" · ")[0]} · ${hm(new Date(e.start))}–${hm(new Date(e.end))}`;
+    const q = encodeURIComponent(e.location);
+    const el = document.createElement("div");
+    el.id = "pop"; el.className = "pop"; el.dataset.act = "closepop";
+    el.innerHTML = `<div class="popc" data-act="noop">
+      <h2>${esc(e.title)}</h2><div class="empty">${esc(when)}</div><div class="loc">📍 ${esc(e.location)}</div>
+      <div id="trav" class="trav"><div class="empty">Working out journey times…</div></div>
+      <div class="popb"><a class="btn" href="https://maps.apple.com/?daddr=${q}&dirflg=d">Open in Apple Maps</a><button class="btn primary" data-act="closepop">Close</button></div></div>`;
+    document.body.appendChild(el);
+    let html;
+    if (DB.mode === "demo") {
+      html = `<div class="mode">🚗 <b>18 min</b> <span>(demo)</span></div><div class="mode">🚶 <b>1 h 5 min</b> <span>(demo)</span></div>`;
+    } else {
+      const arriveBy = e.allDay ? null : e.start;
+      const { data, error } = await DB.sb.functions.invoke("travel", { body: { destination: e.location, lat: e.lat, lon: e.lon, arriveBy } });
+      let err = error && error.message; if (error) { try { err = (await error.context.json()).error || err; } catch (x) {} }
+      if (err || !data) html = `<p class="err">${esc(err || "No route found")}</p>`;
+      else {
+        const d = data.drive, w = data.walk;
+        const leave = d && arriveBy && new Date(arriveBy) > new Date() ? `<div class="leave">Leave by <b>${hm(new Date(new Date(arriveBy) - d.seconds * 1000 - 5 * 60000))}</b> to arrive 5 min early</div>` : "";
+        const traffic = d && d.noTrafficSeconds && d.seconds - d.noTrafficSeconds >= 120 ? ` <span class="warn">+${dur(d.seconds - d.noTrafficSeconds)} traffic</span>` : "";
+        html = (d ? `<div class="mode">🚗 <b>${dur(d.seconds)}</b><span>${dist(d.meters)}</span>${traffic}</div>` : `<div class="mode">🚗 <span>No driving route</span></div>`) +
+          (w ? `<div class="mode">🚶 <b>${dur(w.seconds)}</b><span>${dist(w.meters)}</span></div>` : `<div class="mode">🚶 <span>No walking route</span></div>`) + leave;
+      }
+    }
+    const t = $("#trav"); if (t) t.innerHTML = html;
   }
 
   function cheer() {
