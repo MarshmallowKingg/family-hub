@@ -124,3 +124,11 @@ table.wk td:first-child,table.wk th:first-child{text-align:left}
 .trav .leave{margin-top:10px;font-size:18px;color:var(--accent)}
 .popb{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
 .popb a{text-decoration:none;color:var(--text)}
+
+.btn.sm{padding:5px 10px;font-size:14px;border-radius:9px}
+.btn:disabled{opacity:.35}
+.cellb{font-size:16px;padding:4px 10px;border-radius:8px;background:var(--panel2)}
+.qr{display:flex;gap:18px;align-items:center;margin-top:14px;background:var(--panel2);border-radius:16px;padding:14px}
+.qr svg{width:210px;height:210px;flex:none;background:#fff;border-radius:10px}
+.qr p{margin:0 0 10px}
+.qrmodes{display:flex;gap:8px}

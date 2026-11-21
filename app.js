@@ -1,7 +1,7 @@
 /* Family Hub — single-page app. Vanilla JS, no build step. */
 (function () {
   "use strict";
-  const APP_VERSION = "8"; // bump with version.json on every release so kiosks reload themselves
+  const APP_VERSION = "9"; // bump with version.json on every release so kiosks reload themselves
   const C = window.HUB_CONFIG;
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -133,7 +133,7 @@
   }
 
   /* ---------------- state + render ---------------- */
-  const S = { view: "home", events: [], weekStart: mondayOf(new Date()), manage: false };
+  const S = { view: "home", events: [], weekStart: mondayOf(new Date()), manage: false, choreWeek: 0 };
 
   function setSync(s) { $("#sync").className = "sync " + (DB.mode === "demo" ? "demo" : s); }
   function toast(msg) { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2200); }
@@ -220,21 +220,27 @@
   async function viewChores(mini) {
     const today = new Date(), tk = ymd(today), wd = today.getDay();
     const ws = mondayOf(today);
-    const [chores, log] = await Promise.all([DB.chores(), DB.choreLog(ymd(ws))]);
+    const cs = addDays(ws, 7 * (mini ? 0 : S.choreWeek));   // week shown in the chart
+    const [chores, log] = await Promise.all([DB.chores(), DB.choreLog(ymd(cs < ws ? cs : ws))]);
     const done = new Set(log.map((l) => l.chore_id + "|" + l.date));
     const todays = chores.filter((c) => daysFor(c, tk).includes(wd));
-    const weekStars = log.length;
+    const weekStars = log.filter((l) => l.date >= ymd(ws)).length;
     const tiles = todays.map((c) => `<button class="chore ${done.has(c.id + "|" + tk) ? "done" : ""}" data-act="chore" data-id="${c.id}"><div class="e">${esc(c.emoji)}</div><div class="n">${esc(c.name)}</div></button>`).join("") || `<div class="empty">No jobs today 🎉</div>`;
     const head = `<h2>⭐ ${esc(C.CHILD_NAME)}'s jobs today<span class="spacer"></span><span class="stars">${"★".repeat(Math.min(weekStars, 30))}</span><span class="pill">${weekStars} this week</span></h2>`;
     if (mini) return `<div class="mini">${head}<div class="chores">${tiles}</div></div>`;
     // weekly chart
+    // In edit mode, any day up to today can be tapped to add/remove a star (fix mistaken stars).
     let rows = "";
     for (const c of chores) {
-      const cells = [0, 1, 2, 3, 4, 5, 6].map((i) => { const d = addDays(ws, i), ds = ymd(d); return done.has(c.id + "|" + ds) ? "⭐" : daysFor(c, ds).includes(d.getDay()) ? "○" : "·"; });
-      if (cells.every((x) => x === "·")) continue; // not scheduled this week
-      rows += `<tr><td>${esc(c.emoji)} ${esc(c.name)}</td>${cells.map((x) => `<td>${x}</td>`).join("")}</tr>`;
+      const cells = [0, 1, 2, 3, 4, 5, 6].map((i) => { const d = addDays(cs, i), ds = ymd(d); return { ds, v: done.has(c.id + "|" + ds) ? "⭐" : daysFor(c, ds).includes(d.getDay()) ? "○" : "·" }; });
+      if (cells.every((x) => x.v === "·")) continue; // not scheduled that week
+      rows += `<tr><td>${esc(c.emoji)} ${esc(c.name)}</td>${cells.map((x) => S.manage && x.ds <= tk
+        ? `<td><button class="cellb" data-act="star" data-id="${c.id}" data-date="${x.ds}">${x.v}</button></td>` : `<td>${x.v}</td>`).join("")}</tr>`;
     }
-    const chart = `<table class="wk"><tr><th>This week</th>${[0, 1, 2, 3, 4, 5, 6].map((i) => `<th>${DAYS[addDays(ws, i).getDay()]}</th>`).join("")}</tr>${rows}</table>`;
+    const wkLabel = S.choreWeek === 0 ? "This week" : S.choreWeek === -1 ? "Last week" : `w/c ${cs.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`;
+    const nav = `<button class="btn sm" data-act="cwk" data-n="-1">◀</button><button class="btn sm" data-act="cwk" data-n="1" ${S.choreWeek >= 0 ? "disabled" : ""}>▶</button>`;
+    const chart = (S.manage ? `<p class="empty">Tap a ⭐ or ○ to correct it (today and earlier).</p>` : "") +
+      `<table class="wk"><tr><th>${nav} ${wkLabel}</th>${[0, 1, 2, 3, 4, 5, 6].map((i) => { const d = addDays(cs, i); return `<th>${DAYS[d.getDay()]} ${d.getDate()}</th>`; }).join("")}</tr>${rows}</table>`;
     let manage = `<button class="btn" data-act="manage">${S.manage ? "Done" : "Edit jobs"}</button>`;
     if (S.manage) {
       const dayBtns = (scope, on) => [1, 2, 3, 4, 5, 6, 0].map((d) => `<button class="dayt ${on.includes(d) ? "on" : ""}" data-act="dayt" data-scope="${scope}" data-d="${d}">${DAYS[d]}</button>`).join("");
@@ -264,7 +270,7 @@
       const top = Object.entries(counts).filter(([k]) => !onList.has(k)).sort((a, b) => b[1] - a[1]).slice(0, 12);
       if (top.length) chips = `<div class="chips">${top.map(([k]) => `<button class="chip" data-act="quick" data-t="${esc(k)}">+ ${esc(k)}</button>`).join("")}</div>`;
     }
-    const exp = list === "shopping" && open.length ? `<button class="btn primary" data-act="export">📤 Export to Notes</button> ` : "";
+    const exp = list === "shopping" && open.length ? `<button class="btn" data-act="qr" data-kind="shop">📱 Send to phone</button> <button class="btn primary" data-act="export">📤 Export to Notes</button> ` : "";
     return `<div class="card"><h2>${title}<span class="spacer"></span>${exp}${ticked.length ? `<button class="btn" data-act="clear" data-list="${list}">Clear ticked (${ticked.length})</button>` : ""}</h2>
       <form class="addrow" data-list="${list}"><input name="t" placeholder="${list === "shopping" ? "Add item…" : "Add a to-do…"}" autocomplete="off" enterkeyhint="done"><button class="btn primary">Add</button></form>
       ${chips}${open.map(row).join("")}${ticked.map(row).join("")}</div>`;
@@ -273,7 +279,7 @@
   /* ---------------- events ---------------- */
   document.addEventListener("click", async (e) => {
     const nav = e.target.closest(".rail button");
-    if (nav) { S.view = nav.dataset.view; S.manage = false; if (S.view === "calendar") S.weekStart = mondayOf(new Date()); return render(); }
+    if (nav) { S.view = nav.dataset.view; S.manage = false; S.choreWeek = 0; if (S.view === "calendar") S.weekStart = mondayOf(new Date()); return render(); }
     const a = e.target.closest("[data-act]"); if (!a) return;
     const act = a.dataset.act, id = a.dataset.id;
     if (act === "del") { e.stopPropagation(); await DB.deleteItems([id]); }
@@ -294,6 +300,9 @@
     else if (act === "ev") { showTravel(S.events[+a.dataset.i]); return; }
     else if (act === "closepop") { $("#pop").remove(); if (pending) safeRender(); return; }
     else if (act === "noop") return;
+    else if (act === "star") await DB.toggleChore(id, a.dataset.date);
+    else if (act === "cwk") S.choreWeek = Math.min(0, S.choreWeek + +a.dataset.n);
+    else if (act === "qr") { showQR(a.dataset.kind, a.dataset.mode); return; }
     else if (act === "addchore") {
       const name = $("#cName").value.trim(); if (!name) return;
       const days = [...document.querySelectorAll('.dayt.on[data-scope="new"]')].map((b) => +b.dataset.d);
@@ -330,7 +339,9 @@
     el.innerHTML = `<div class="popc" data-act="noop">
       <h2>${esc(e.title)}</h2><div class="empty">${esc(when)}</div><div class="loc">📍 ${esc(e.location)}</div>
       <div id="trav" class="trav"><div class="empty">Working out journey times…</div></div>
-      <div class="popb"><a class="btn" href="https://maps.apple.com/?daddr=${q}&dirflg=d">Open in Apple Maps</a><button class="btn primary" data-act="closepop">Close</button></div></div>`;
+      <div id="qrbox"></div>
+      <div class="popb"><a class="btn" href="https://maps.apple.com/?daddr=${q}&dirflg=d">Open in Maps</a><button class="btn" data-act="qr" data-kind="map" data-mode="d">📱 Send route to phone</button><button class="btn primary" data-act="closepop">Close</button></div></div>`;
+    S.popEvent = e;
     document.body.appendChild(el);
     let html;
     if (DB.mode === "demo") {
@@ -349,6 +360,35 @@
       }
     }
     const t = $("#trav"); if (t) t.innerHTML = html;
+  }
+
+  /* ---------------- send to phone (QR) ----------------
+     Scan with the iPhone camera. Map -> opens Apple Maps with the route from where you are.
+     Shopping -> opens share.html with the list inside the link itself (nothing stored online), one tap to Notes. */
+  function qrSVG(text) {
+    const q = qrcode(0, "L"); q.addData(text); q.make();
+    return q.createSvgTag({ cellSize: 6, margin: 3, scalable: true });
+  }
+  function showQR(kind, mode) {
+    let url, title, extra = "";
+    if (kind === "map") {
+      const e = S.popEvent; if (!e) return;
+      const dest = e.lat != null && e.lon != null ? `${e.lat},${e.lon}` : e.location;
+      url = `https://maps.apple.com/?daddr=${encodeURIComponent(dest)}&dirflg=${mode}`;
+      title = "Scan with your iPhone camera to open the route in Apple Maps";
+      extra = `<div class="qrmodes"><button class="btn sm ${mode === "d" ? "primary" : ""}" data-act="qr" data-kind="map" data-mode="d">🚗 Drive</button><button class="btn sm ${mode === "w" ? "primary" : ""}" data-act="qr" data-kind="map" data-mode="w">🚶 Walk</button></div>`;
+      $("#qrbox").innerHTML = `<div class="qr">${qrSVG(url)}<div><p>${title}</p>${extra}</div></div>`;
+      return;
+    }
+    const items = S.shopOpen || []; if (!items.length) return;
+    const head = "Shopping " + new Date().toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+    url = new URL("share.html", location.href).href + "#" + encodeURIComponent(head + "\n" + items.join("\n"));
+    const el = document.createElement("div");
+    el.id = "pop"; el.className = "pop"; el.dataset.act = "closepop";
+    el.innerHTML = `<div class="popc" data-act="noop"><h2>📱 Shopping list to phone</h2>
+      <div class="qr">${qrSVG(url)}<div><p>Scan with your iPhone camera, then tap <b>Save to Notes</b>.</p><p class="empty">${items.length} items</p></div></div>
+      <div class="popb"><button class="btn primary" data-act="closepop">Close</button></div></div>`;
+    document.body.appendChild(el);
   }
 
   function cheer() {

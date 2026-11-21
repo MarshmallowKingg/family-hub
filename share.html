@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en-GB"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shopping list</title>
+<style>
+  body{margin:0;background:#14171c;color:#eef1f5;font:18px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;padding:20px 18px 120px}
+  h1{font-size:24px;margin:0 0 14px}
+  li{list-style:none;padding:12px 14px;background:#1d2128;border-radius:12px;margin-bottom:8px}
+  ul{padding:0;margin:0}
+  .bar{position:fixed;left:0;right:0;bottom:0;padding:14px 18px calc(14px + env(safe-area-inset-bottom));background:#14171c;display:flex;gap:10px}
+  button{flex:1;font:inherit;font-weight:600;padding:15px;border:0;border-radius:14px;background:#252a33;color:#eef1f5}
+  button.p{background:#5fb3ff;color:#06121f}
+  .tip{color:#9aa3b2;font-size:15px;margin-top:14px}
+</style></head>
+<body>
+<!-- The list travels inside the link (#...), so it is never sent to or stored on any server. -->
+<h1 id="t"></h1><ul id="l"></ul>
+<p class="tip">In Notes: select all, then tap the ✓ checklist button to get tick boxes.</p>
+<div class="bar"><button id="c">Copy</button><button id="s" class="p">Save to Notes</button></div>
+<script>
+  const lines = decodeURIComponent(location.hash.slice(1) || "").split("\n").filter(Boolean);
+  const title = lines.shift() || "Shopping";
+  document.getElementById("t").textContent = title;
+  document.title = title;
+  const ul = document.getElementById("l");
+  lines.forEach((x) => { const li = document.createElement("li"); li.textContent = x; ul.appendChild(li); });
+  const text = title + "\n" + lines.join("\n");
+  document.getElementById("s").onclick = () => navigator.share ? navigator.share({ text }).catch(() => {}) : copy();
+  const copy = () => navigator.clipboard.writeText(text).then(() => (document.getElementById("c").textContent = "Copied ✓"));
+  document.getElementById("c").onclick = copy;
+</script>
+</body></html>
