@@ -94,10 +94,44 @@ function parseICS(ics: string, calendar: string) {
   return out;
 }
 
+// ---- create an event (hub "+ Add event") ----
+const icsText = (s: string) => String(s || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+const icsDate = (d: string) => d.replace(/-/g, "");
+
+async function createEvent(ev: { title: string; start: string; end: string; allDay: boolean; location?: string; calendar?: string }) {
+  if (!ev.title || !ev.start) throw new Error("Title and start are required");
+  const cals = await calendars();
+  if (!cals.length) throw new Error("No calendar available to add to");
+  const cal = cals.find((c) => c.name.toLowerCase() === (ev.calendar || "").toLowerCase()) || cals[0];
+  const uid = crypto.randomUUID().toUpperCase();
+  const lines = [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Family Hub//EN", "CALSCALE:GREGORIAN",
+    "BEGIN:VEVENT", `UID:${uid}`, `DTSTAMP:${fmt(new Date())}`,
+    ev.allDay ? `DTSTART;VALUE=DATE:${icsDate(ev.start)}` : `DTSTART:${fmt(new Date(ev.start))}`,
+    ev.allDay ? `DTEND;VALUE=DATE:${icsDate(ev.end || ev.start)}` : `DTEND:${fmt(new Date(ev.end || ev.start))}`,
+    `SUMMARY:${icsText(ev.title)}`,
+    ...(ev.location ? [`LOCATION:${icsText(ev.location)}`] : []),
+    "END:VEVENT", "END:VCALENDAR",
+  ];
+  const url = cal.url.replace(/\/?$/, "/") + uid + ".ics";
+  const r = await fetch(url, {
+    method: "PUT",
+    headers: { Authorization: auth(), "Content-Type": "text/calendar; charset=utf-8", "If-None-Match": "*" },
+    body: lines.join("\r\n") + "\r\n",
+  });
+  if (!r.ok) throw new Error(`Couldn't add event: iCloud said ${r.status}`);
+  cache = null; // so the next read includes it
+  return { ok: true, calendar: cal.name };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   try {
-    const { days = 14 } = await req.json().catch(() => ({}));
+    const reqBody = await req.json().catch(() => ({}));
+    if (reqBody.action === "create") {
+      return new Response(JSON.stringify(await createEvent(reqBody.event || {})), { headers: { ...CORS, "Content-Type": "application/json" } });
+    }
+    const { days = 14 } = reqBody;
     const key = String(days);
     if (cache && cache.key === key && Date.now() - cache.at < 60_000) {
       return new Response(JSON.stringify(cache.data), { headers: { ...CORS, "Content-Type": "application/json" } });

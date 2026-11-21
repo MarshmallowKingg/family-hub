@@ -1,7 +1,7 @@
 /* Family Hub — single-page app. Vanilla JS, no build step. */
 (function () {
   "use strict";
-  const APP_VERSION = "10"; // bump with version.json on every release so kiosks reload themselves
+  const APP_VERSION = "11"; // bump with version.json on every release so kiosks reload themselves
   const C = window.HUB_CONFIG;
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -41,6 +41,7 @@
     async addChore(c) { const a = Local._get("chores", []); a.push({ id: uid(), sort: a.length + 1, ...c }); Local._set("chores", a); },
     async deleteChore(id) { Local._set("chores", Local._get("chores", []).filter((c) => c.id !== id)); },
     async updateChore(id, patch) { Local._set("chores", Local._get("chores", []).map((c) => (c.id === id ? { ...c, ...patch } : c))); },
+    async createEvent(ev) { const a = Local._get("myevents", []); a.push({ ...ev, calendar: ev.calendar || "Family" }); Local._set("myevents", a); },
     async setHandoff(kind, payload) { Local._set("handoff", { kind, payload, created_at: new Date().toISOString() }); },
     async choreLog(from) { return Local._get("chore_log", []).filter((l) => l.date >= from); },
     async toggleChore(chore_id, date) {
@@ -50,7 +51,8 @@
     async events() {
       const t = startOfDay(new Date()); const mk = (d, h, m, mins, title, cal) => { const s = addDays(t, d); s.setHours(h, m); return { title, start: s.toISOString(), end: new Date(+s + mins * 60000).toISOString(), allDay: false, calendar: cal }; };
       const ad = (d, title, cal) => ({ title, start: ymd(addDays(t, d)), end: ymd(addDays(t, d + 1)), allDay: true, calendar: cal });
-      return [{ ...mk(0, 9, 30, 60, "Demo: Swimming", "Family"), location: "Wakefield Sun Lane Leisure Centre" }, mk(0, 18, 0, 90, "Demo: Tea at Nan's", "Family"), ad(1, "Demo: Bin day (green)", "Home"), mk(2, 19, 0, 120, "Demo: Cricket committee", "Lewis"), mk(4, 10, 0, 45, "Demo: Vets – Stitch", "Family")];
+      S.calendars = ["Family", "Home"];
+      return [...Local._get("myevents", []), { ...mk(0, 9, 30, 60, "Demo: Swimming", "Family"), location: "Wakefield Sun Lane Leisure Centre" }, mk(0, 18, 0, 90, "Demo: Tea at Nan's", "Family"), ad(1, "Demo: Bin day (green)", "Home"), mk(2, 19, 0, 120, "Demo: Cricket committee", "Lewis"), mk(4, 10, 0, 45, "Demo: Vets – Stitch", "Family")];
     },
   };
 
@@ -98,6 +100,12 @@
     async addChore(c) { await Cloud._q(Cloud.sb.from("chores").insert(c)); },
     async deleteChore(id) { await Cloud._q(Cloud.sb.from("chores").update({ active: false }).eq("id", id)); },
     async updateChore(id, patch) { await Cloud._q(Cloud.sb.from("chores").update(patch).eq("id", id)); },
+    async createEvent(ev) {
+      const { data, error } = await Cloud.sb.functions.invoke("icloud-calendar", { body: { action: "create", event: ev } });
+      let err = error && error.message; if (error) { try { err = (await error.context.json()).error || err; } catch (x) {} }
+      if (err || (data && data.error)) throw new Error(err || data.error);
+      return data;
+    },
     async setHandoff(kind, payload) { await Cloud._q(Cloud.sb.from("handoff").upsert({ id: 1, kind, payload, created_at: new Date().toISOString() })); },
     async choreLog(from) { return Cloud._q(Cloud.sb.from("chore_log").select("*").gte("date", from)); },
     async toggleChore(chore_id, date) {
@@ -112,6 +120,7 @@
         S.calError = msg; return S.events || [];
       }
       S.calError = null;
+      if (data && data.calendars) S.calendars = data.calendars;
       if (data && data.error) { S.calError = data.error; return []; }
       if (data && !(data.calendars || []).length) S.calError = "Connected, but no calendars matched ICLOUD_CALENDARS. Calendars on the account: " + ((data.available || []).join(", ") || "none found");
       else if (data && !(data.events || []).length) S.calError = "Connected to " + data.calendars.join(", ") + " but found no events in the next " + C.CALENDAR_DAYS + " days.";
@@ -191,7 +200,7 @@
     let days4 = "";
     for (let i = 0; i < 4; i++) {
       const d = addDays(new Date(), i), evs = eventsOn(d);
-      days4 += `<div class="card dayc ${i === 0 ? "today" : ""}"><div class="day-h ${i === 0 ? "today" : ""}">${dayLabel(d)}</div>${evs.length ? evs.map(evHTML).join("") : `<div class="empty">Nothing planned</div>`}</div>`;
+      days4 += `<div class="card dayc ${i === 0 ? "today" : ""}"><div class="day-h ${i === 0 ? "today" : ""}">${dayLabel(d)}<button class="addev" data-act="newev" data-date="${ymd(d)}">＋</button></div>${evs.length ? evs.map(evHTML).join("") : `<div class="empty">Nothing planned</div>`}</div>`;
     }
     const [chores, shop, todo] = await Promise.all([viewChores(true), viewList("shopping", true), viewList("todo", true)]);
     const calErr = S.calError ? `<p class="err">Calendar: ${esc(S.calError)}</p>` : "";
@@ -210,13 +219,13 @@
       let c = "";
       for (let i = 0; i < 7; i++) {
         const d = addDays(start, i), evs = eventsOn(d);
-        c += `<div class="d ${ymd(d) === today ? "today" : ""}"><h3>${DAYS[d.getDay()]} ${d.getDate()}${d.getDate() === 1 || i === 0 ? " " + d.toLocaleDateString("en-GB", { month: "short" }) : ""}</h3>${evs.map(evHTML).join("") || '<div class="empty">—</div>'}</div>`;
+        c += `<div class="d ${ymd(d) === today ? "today" : ""}"><h3 data-act="newev" data-date="${ymd(d)}">${DAYS[d.getDay()]} ${d.getDate()}${d.getDate() === 1 || i === 0 ? " " + d.toLocaleDateString("en-GB", { month: "short" }) : ""}</h3>${evs.map(evHTML).join("") || '<div class="empty">—</div>'}</div>`;
       }
       return `<div class="week">${c}</div>`;
     };
     const cols = row(ws) + row(addDays(ws, 7));
     const title = `${ws.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${addDays(ws, 13).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
-    return `<div class="weeknav"><button class="btn" data-act="wk" data-n="-7">◀</button><button class="btn" data-act="wk" data-n="0">Today</button><button class="btn" data-act="wk" data-n="7">▶</button><h2>${title}</h2></div>${S.calError ? `<p class="err">Calendar: ${esc(S.calError)}</p>` : ""}<div class="weeks">${cols}</div>`;
+    return `<div class="weeknav"><button class="btn" data-act="wk" data-n="-7">◀</button><button class="btn" data-act="wk" data-n="0">Today</button><button class="btn" data-act="wk" data-n="7">▶</button><h2>${title}</h2><button class="btn primary" data-act="newev" data-date="${ymd(new Date())}">＋ Add event</button></div>${S.calError ? `<p class="err">Calendar: ${esc(S.calError)}</p>` : ""}<div class="weeks">${cols}</div>`;
   }
 
   async function viewChores(mini) {
@@ -302,6 +311,9 @@
     else if (act === "ev") { showTravel(S.events[+a.dataset.i]); return; }
     else if (act === "closepop") { $("#pop").remove(); if (pending) safeRender(); return; }
     else if (act === "noop") return;
+    else if (act === "newev") { showNewEvent(a.dataset.date); return; }
+    else if (act === "allday") { const on = a.classList.toggle("on"); document.querySelectorAll(".evtime").forEach((x) => (x.style.display = on ? "none" : "")); return; }
+    else if (act === "saveev") { saveNewEvent(a); return; }
     else if (act === "star") await DB.toggleChore(id, a.dataset.date);
     else if (act === "cwk") S.choreWeek = Math.min(0, S.choreWeek + +a.dataset.n);
     else if (act === "qr") { showQR(a.dataset.kind, a.dataset.mode); return; }
@@ -393,6 +405,46 @@
       <div class="qr">${qrSVG(url)}<div>${tapHint}<p class="empty">Then tap <b>Add to Reminders</b> for a tick-box list. ${items.length} items.</p></div></div>
       <div class="popb"><button class="btn primary" data-act="closepop">Close</button></div></div>`;
     document.body.appendChild(el);
+  }
+
+  /* ---------------- add event (writes to iCloud, syncs to everyone's phones) ---------------- */
+  function showNewEvent(date) {
+    const old = $("#pop"); if (old) old.remove();
+    const n = new Date(); const h = Math.min(22, n.getHours() + 1);
+    const cals = (S.calendars || []).map((c) => `<option>${esc(c)}</option>`).join("");
+    const el = document.createElement("div");
+    el.id = "pop"; el.className = "pop"; el.dataset.act = "closepop";
+    el.innerHTML = `<div class="popc evform" data-act="noop"><h2>＋ New event</h2>
+      <input id="evTitle" placeholder="What?" autocomplete="off">
+      <div class="r"><input id="evDate" type="date" value="${date || ymd(n)}"><button class="dayt" data-act="allday">All day</button></div>
+      <div class="r evtime"><label>From <input id="evStart" type="time" value="${pad(h)}:00"></label><label>to <input id="evEnd" type="time" value="${pad(h + 1)}:00"></label></div>
+      <input id="evLoc" placeholder="Where? (optional)" autocomplete="off">
+      ${cals ? `<div class="r"><label>Calendar <select id="evCal">${cals}</select></label></div>` : ""}
+      <p id="evErr" class="err"></p>
+      <div class="popb"><button class="btn" data-act="closepop">Cancel</button><button class="btn primary" data-act="saveev">Add to calendar</button></div></div>`;
+    document.body.appendChild(el);
+    // keep end an hour after start unless changed by hand
+    $("#evStart").addEventListener("change", (e) => { const [hh, mm] = e.target.value.split(":").map(Number); $("#evEnd").value = `${pad(Math.min(23, hh + 1))}:${pad(mm)}`; });
+    setTimeout(() => $("#evTitle").focus(), 50);
+  }
+  async function saveNewEvent(btn) {
+    const title = $("#evTitle").value.trim(), date = $("#evDate").value, allDay = document.querySelector('[data-act="allday"]').classList.contains("on");
+    if (!title || !date) { $("#evErr").textContent = "Add a title and date."; return; }
+    let start, end;
+    if (allDay) { start = date; end = ymd(addDays(new Date(date + "T12:00:00"), 1)); }
+    else {
+      start = new Date(`${date}T${$("#evStart").value}:00`); end = new Date(`${date}T${$("#evEnd").value}:00`);
+      if (end <= start) end = new Date(+start + 3600000);
+      start = start.toISOString(); end = end.toISOString();
+    }
+    const ev = { title, start, end, allDay, location: $("#evLoc").value.trim() || undefined, calendar: $("#evCal") ? $("#evCal").value : undefined };
+    btn.disabled = true; btn.textContent = "Adding…";
+    try {
+      await DB.createEvent(ev);
+      $("#pop").remove(); toast("Added – it'll appear on your phones shortly");
+      S.events = [...S.events, ev]; render();   // show it straight away
+      setTimeout(loadEvents, 4000);              // then refresh from iCloud
+    } catch (e) { $("#evErr").textContent = e.message; btn.disabled = false; btn.textContent = "Add to calendar"; }
   }
 
   function cheer() {

@@ -133,3 +133,12 @@ table.wk td:first-child,table.wk th:first-child{text-align:left}
 .qr p{margin:0 0 10px}
 .qrmodes{display:flex;gap:8px}
 .qr .nfc{font-size:17px}
+
+.dayc .day-h{display:flex;justify-content:space-between;align-items:center}
+.addev{font-size:20px;line-height:1;color:var(--accent);padding:0 4px}
+.week .d h3{cursor:pointer}
+.evform input,.evform select{font:inherit;font-size:19px;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--panel2);color:var(--text);width:100%;box-sizing:border-box;margin-bottom:10px}
+.evform .r{display:flex;gap:10px;align-items:center}
+.evform .r input{flex:1}
+.evform label{display:flex;align-items:center;gap:8px;flex:1;color:var(--muted)}
+.evform .dayt{padding:12px 14px;margin-bottom:10px;white-space:nowrap}
