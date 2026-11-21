@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en-GB"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Family Hub → phone</title>
+<style>
+  body{margin:0;background:#14171c;color:#eef1f5;font:18px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;padding:28px 20px;text-align:center}
+  h1{font-size:24px}.m{color:#9aa3b2}
+  input,button,a.b{display:block;width:100%;box-sizing:border-box;font:inherit;padding:15px;border-radius:14px;margin:10px 0;border:1px solid #323844;background:#252a33;color:#eef1f5;text-decoration:none}
+  button,a.b.p{background:#5fb3ff;color:#06121f;font-weight:700;border:0}
+  .err{color:#ff8a8a}
+</style></head>
+<body>
+<!-- Opened by tapping an iPhone on the hub's NFC tag. Shows whatever was last sent with "Send to phone". -->
+<div id="out"><p class="m">Loading…</p></div>
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(async () => {
+  const C = window.HUB_CONFIG, out = document.getElementById("out");
+  const sb = supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY, { auth: { persistSession: true } });
+  const show = (h) => (out.innerHTML = h);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  async function run() {
+    const { data, error } = await sb.from("handoff").select("*").eq("id", 1).maybeSingle();
+    if (error) return show(`<p class="err">${esc(error.message)}</p>`);
+    if (!data || Date.now() - new Date(data.created_at) > 15 * 60000)
+      return show(`<h1>Nothing to send</h1><p class="m">On the hub, tap <b>📱 Send to phone</b> on a map or the shopping list, then tap your phone on the tag again.</p>`);
+    const p = data.payload;
+    if (data.kind === "map") {
+      const url = (m) => `https://maps.apple.com/?daddr=${encodeURIComponent(p.dest)}&dirflg=${m}`;
+      show(`<h1>${esc(p.title)}</h1><p class="m">📍 ${esc(p.location)}</p>
+        <a class="b p" href="${url(p.mode || "d")}">Open route in Maps</a>
+        <a class="b" href="${url(p.mode === "w" ? "d" : "w")}">${p.mode === "w" ? "🚗 Drive instead" : "🚶 Walk instead"}</a>`);
+      location.href = url(p.mode || "d"); // jump straight into Maps
+    } else if (data.kind === "shop") {
+      location.replace("share.html#" + encodeURIComponent(p.title + "\n" + (p.items || []).join("\n")));
+    }
+  }
+
+  const { data: s } = await sb.auth.getSession();
+  if (s.session) return run();
+  show(`<h1>Family Hub</h1><p class="m">Sign in once on this phone with the family login.</p>
+    <form id="f"><input id="e" type="email" placeholder="Email" autocomplete="username" required>
+    <input id="p" type="password" placeholder="Password" autocomplete="current-password" required>
+    <button>Sign in</button><p id="x" class="err"></p></form>`);
+  document.getElementById("f").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const $ = (id) => document.getElementById(id);
+    const { error } = await sb.auth.signInWithPassword({ email: $("e").value.trim(), password: $("p").value });
+    if (error) $("x").textContent = error.message; else run();
+  };
+})();
+</script>
+</body></html>

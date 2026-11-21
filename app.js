@@ -1,7 +1,7 @@
 /* Family Hub — single-page app. Vanilla JS, no build step. */
 (function () {
   "use strict";
-  const APP_VERSION = "9"; // bump with version.json on every release so kiosks reload themselves
+  const APP_VERSION = "10"; // bump with version.json on every release so kiosks reload themselves
   const C = window.HUB_CONFIG;
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -41,6 +41,7 @@
     async addChore(c) { const a = Local._get("chores", []); a.push({ id: uid(), sort: a.length + 1, ...c }); Local._set("chores", a); },
     async deleteChore(id) { Local._set("chores", Local._get("chores", []).filter((c) => c.id !== id)); },
     async updateChore(id, patch) { Local._set("chores", Local._get("chores", []).map((c) => (c.id === id ? { ...c, ...patch } : c))); },
+    async setHandoff(kind, payload) { Local._set("handoff", { kind, payload, created_at: new Date().toISOString() }); },
     async choreLog(from) { return Local._get("chore_log", []).filter((l) => l.date >= from); },
     async toggleChore(chore_id, date) {
       const a = Local._get("chore_log", []); const i = a.findIndex((l) => l.chore_id === chore_id && l.date === date);
@@ -97,6 +98,7 @@
     async addChore(c) { await Cloud._q(Cloud.sb.from("chores").insert(c)); },
     async deleteChore(id) { await Cloud._q(Cloud.sb.from("chores").update({ active: false }).eq("id", id)); },
     async updateChore(id, patch) { await Cloud._q(Cloud.sb.from("chores").update(patch).eq("id", id)); },
+    async setHandoff(kind, payload) { await Cloud._q(Cloud.sb.from("handoff").upsert({ id: 1, kind, payload, created_at: new Date().toISOString() })); },
     async choreLog(from) { return Cloud._q(Cloud.sb.from("chore_log").select("*").gte("date", from)); },
     async toggleChore(chore_id, date) {
       const ex = await Cloud._q(Cloud.sb.from("chore_log").select("id").eq("chore_id", chore_id).eq("date", date));
@@ -369,24 +371,26 @@
     const q = qrcode(0, "L"); q.addData(text); q.make();
     return q.createSvgTag({ cellSize: 6, margin: 3, scalable: true });
   }
+  // Shopping lines -> URL that runs the "Hub Shopping" Shortcut (adds each item to Reminders with tick boxes)
   function showQR(kind, mode) {
-    let url, title, extra = "";
+    const tapHint = `<p class="nfc">📲 Tap your iPhone on the <b>NFC tag</b> on the hub, or scan:</p>`;
     if (kind === "map") {
       const e = S.popEvent; if (!e) return;
       const dest = e.lat != null && e.lon != null ? `${e.lat},${e.lon}` : e.location;
-      url = `https://maps.apple.com/?daddr=${encodeURIComponent(dest)}&dirflg=${mode}`;
-      title = "Scan with your iPhone camera to open the route in Apple Maps";
-      extra = `<div class="qrmodes"><button class="btn sm ${mode === "d" ? "primary" : ""}" data-act="qr" data-kind="map" data-mode="d">🚗 Drive</button><button class="btn sm ${mode === "w" ? "primary" : ""}" data-act="qr" data-kind="map" data-mode="w">🚶 Walk</button></div>`;
-      $("#qrbox").innerHTML = `<div class="qr">${qrSVG(url)}<div><p>${title}</p>${extra}</div></div>`;
+      const url = `https://maps.apple.com/?daddr=${encodeURIComponent(dest)}&dirflg=${mode}`;
+      DB.setHandoff("map", { title: e.title, location: e.location, dest, mode }).catch(() => {});
+      const extra = `<div class="qrmodes"><button class="btn sm ${mode === "d" ? "primary" : ""}" data-act="qr" data-kind="map" data-mode="d">🚗 Drive</button><button class="btn sm ${mode === "w" ? "primary" : ""}" data-act="qr" data-kind="map" data-mode="w">🚶 Walk</button></div>`;
+      $("#qrbox").innerHTML = `<div class="qr">${qrSVG(url)}<div>${tapHint}<p class="empty">Opens the route in Apple Maps from wherever you are.</p>${extra}</div></div>`;
       return;
     }
     const items = S.shopOpen || []; if (!items.length) return;
     const head = "Shopping " + new Date().toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
-    url = new URL("share.html", location.href).href + "#" + encodeURIComponent(head + "\n" + items.join("\n"));
+    DB.setHandoff("shop", { title: head, items }).catch(() => {});
+    const url = new URL("share.html", location.href).href + "#" + encodeURIComponent(head + "\n" + items.join("\n"));
     const el = document.createElement("div");
     el.id = "pop"; el.className = "pop"; el.dataset.act = "closepop";
     el.innerHTML = `<div class="popc" data-act="noop"><h2>📱 Shopping list to phone</h2>
-      <div class="qr">${qrSVG(url)}<div><p>Scan with your iPhone camera, then tap <b>Save to Notes</b>.</p><p class="empty">${items.length} items</p></div></div>
+      <div class="qr">${qrSVG(url)}<div>${tapHint}<p class="empty">Then tap <b>Add to Reminders</b> for a tick-box list. ${items.length} items.</p></div></div>
       <div class="popb"><button class="btn primary" data-act="closepop">Close</button></div></div>`;
     document.body.appendChild(el);
   }

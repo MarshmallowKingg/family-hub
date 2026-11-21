@@ -132,3 +132,4 @@ table.wk td:first-child,table.wk th:first-child{text-align:left}
 .qr svg{width:210px;height:210px;flex:none;background:#fff;border-radius:10px}
 .qr p{margin:0 0 10px}
 .qrmodes{display:flex;gap:8px}
+.qr .nfc{font-size:17px}

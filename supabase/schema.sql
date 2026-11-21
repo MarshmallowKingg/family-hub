@@ -69,3 +69,15 @@ alter default privileges in schema public grant select, insert, update, delete o
 
 -- v2: chore day changes apply from a date onwards (keeps past history intact)
 alter table chores add column if not exists schedule jsonb not null default '[]';
+
+-- v3: "send to phone" hand-off (NFC tag opens go.html, which reads the latest item)
+create table if not exists handoff (
+  id int primary key default 1,
+  kind text not null,
+  payload jsonb not null,
+  created_at timestamptz not null default now()
+);
+alter table handoff enable row level security;
+drop policy if exists "family" on handoff;
+create policy "family" on handoff for all to authenticated using (true) with check (true);
+grant select, insert, update, delete on handoff to authenticated;
