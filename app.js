@@ -1,7 +1,7 @@
 /* Family Hub — single-page app. Vanilla JS, no build step. */
 (function () {
   "use strict";
-  const APP_VERSION = "11"; // bump with version.json on every release so kiosks reload themselves
+  const APP_VERSION = "12"; // bump with version.json on every release so kiosks reload themselves
   const C = window.HUB_CONFIG;
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -496,7 +496,9 @@
   let lastTouch = Date.now();
   const minsOf = (s) => { const [h, m] = s.split(":").map(Number); return h * 60 + m; };
   function isNight() { const n = new Date(), m = n.getHours() * 60 + n.getMinutes(), a = minsOf(C.NIGHT_START), b = minsOf(C.NIGHT_END); return a > b ? m >= a || m < b : m >= a && m < b; }
+  const isPhone = () => window.matchMedia("(max-width: 760px)").matches;
   function checkIdle() {
+    if (isPhone()) { $("#saver").classList.add("hidden"); return; } // clock screen is for the wall hub only
     const idle = Date.now() - lastTouch > C.IDLE_MINUTES * 60000;
     $("#saver").classList.toggle("hidden", !(idle || (isNight() && Date.now() - lastTouch > 60000)));
   }
