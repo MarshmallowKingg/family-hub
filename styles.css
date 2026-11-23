@@ -220,3 +220,14 @@ body[data-theme="playtime"] .btn,body[data-theme="playtime"] .chore{box-shadow:0
 body[data-theme="playtime"] .chore.done{transform:rotate(-2deg)}
 body[data-theme="playtime"] .card h2,body[data-theme="playtime"] .day-h{font-weight:800}
 body[data-theme="playtime"] .day-h.today{color:var(--accent)}
+
+.weather{cursor:pointer;border-radius:12px;padding:4px 8px}.weather:active{background:var(--panel2)}
+.popc.wide{width:760px}
+table.fc{width:100%;border-collapse:collapse;margin-top:10px}
+table.fc td{padding:10px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.fc .fd{font-weight:600;width:80px}.fc .fi{font-size:26px;width:36px}.fc .fx{color:var(--muted);font-size:15px}
+.fc .ft{width:36px;text-align:center}.fc .fb{width:140px}
+.fc .fr,.fc .fw{font-size:15px}.fc .fr span,.fc .fw span{color:var(--muted)}
+.tbar{position:relative;height:8px;border-radius:4px;background:var(--panel2)}
+.tbar i{position:absolute;top:0;bottom:0;border-radius:4px;background:linear-gradient(90deg,#5fb3ff,#ffb347)}
+@media (max-width:760px){ .popc.wide{width:auto} .fc .fx,.fc .fb,.fc .fw span{display:none} table.fc td{padding:9px 3px;font-size:14px} }

@@ -1,7 +1,7 @@
 /* Family Hub — single-page app. Vanilla JS, no build step. */
 (function () {
   "use strict";
-  const APP_VERSION = "13"; // bump with version.json on every release so kiosks reload themselves
+  const APP_VERSION = "14"; // bump with version.json on every release so kiosks reload themselves
   const C = window.HUB_CONFIG;
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -311,6 +311,7 @@
     else if (act === "ev") { showTravel(S.events[+a.dataset.i]); return; }
     else if (act === "closepop") { $("#pop").remove(); if (pending) safeRender(); return; }
     else if (act === "noop") return;
+    else if (act === "forecast") { showForecast(); return; }
     else if (act === "themes") { showThemes(); return; }
     else if (act === "settheme") { setTheme(a.dataset.t); showThemes(); return; }
     else if (act === "newev") { showNewEvent(a.dataset.date); return; }
@@ -449,6 +450,32 @@
     } catch (e) { $("#evErr").textContent = e.message; btn.disabled = false; btn.textContent = "Add to calendar"; }
   }
 
+  /* ---------------- 7-day forecast popup ---------------- */
+  const WDESC = (c) => c === 0 ? "Clear" : c <= 2 ? "Partly cloudy" : c === 3 ? "Cloudy" : c <= 48 ? "Fog" : c <= 57 ? "Drizzle" : c <= 67 ? "Rain" : c <= 77 ? "Snow" : c <= 82 ? "Showers" : c <= 86 ? "Snow showers" : "Thunderstorms";
+  function showForecast() {
+    const w = S.weather; if (!w || !w.daily) return;
+    const d = w.daily, t = (x) => x.slice(11, 16);
+    const lo = Math.min(...d.temperature_2m_min), hi = Math.max(...d.temperature_2m_max), span = Math.max(1, hi - lo);
+    let rows = "";
+    for (let i = 0; i < d.time.length; i++) {
+      const day = new Date(d.time[i] + "T12:00:00");
+      const mn = d.temperature_2m_min[i], mx = d.temperature_2m_max[i];
+      const bar = `<div class="tbar"><i style="left:${((mn - lo) / span) * 100}%;width:${Math.max(6, ((mx - mn) / span) * 100)}%"></i></div>`;
+      rows += `<tr><td class="fd">${i === 0 ? "Today" : DAYS[day.getDay()] + " " + day.getDate()}</td><td class="fi">${WMO(d.weather_code[i])}</td><td class="fx">${WDESC(d.weather_code[i])}</td>
+        <td class="ft">${Math.round(mn)}°</td><td class="fb">${bar}</td><td class="ft"><b>${Math.round(mx)}°</b></td>
+        <td class="fr">☔ ${d.precipitation_probability_max[i]}%<span>${d.precipitation_sum[i] ? " · " + d.precipitation_sum[i].toFixed(1) + " mm" : ""}</span></td>
+        <td class="fw">💨 ${Math.round(d.wind_speed_10m_max[i])} mph<span> · gusts ${Math.round(d.wind_gusts_10m_max[i])}</span></td></tr>`;
+    }
+    const c = w.current;
+    const el = document.createElement("div");
+    el.id = "pop"; el.className = "pop"; el.dataset.act = "closepop";
+    el.innerHTML = `<div class="popc wide" data-act="noop"><h2>${WMO(c.weather_code)} ${Math.round(c.temperature_2m)}° now · ${WDESC(c.weather_code)}</h2>
+      <p class="empty">Feels like ${Math.round(c.apparent_temperature)}° · wind ${Math.round(c.wind_speed_10m)} mph · sunrise ${t(d.sunrise[0])} · sunset ${t(d.sunset[0])} · UV ${Math.round(d.uv_index_max[0])}</p>
+      <table class="fc">${rows}</table>
+      <div class="popb"><button class="btn primary" data-act="closepop">Close</button></div></div>`;
+    document.body.appendChild(el);
+  }
+
   /* ---------------- themes (saved on each device separately) ---------------- */
   const THEMES = [
     { id: "midnight", name: "Midnight", sw: ["#14171c", "#1d2128", "#5fb3ff", "#ffd54a"] },
@@ -499,14 +526,16 @@
   const WMO = (c) => c === 0 ? "☀️" : c <= 2 ? "🌤️" : c === 3 ? "☁️" : c <= 48 ? "🌫️" : c <= 57 ? "🌦️" : c <= 67 ? "🌧️" : c <= 77 ? "🌨️" : c <= 82 ? "🌧️" : c <= 86 ? "🌨️" : "⛈️";
   async function weather() {
     try {
-      const u = `https://api.open-meteo.com/v1/forecast?latitude=${C.LAT}&longitude=${C.LON}&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Europe%2FLondon&forecast_days=4`;
+      const u = `https://api.open-meteo.com/v1/forecast?latitude=${C.LAT}&longitude=${C.LON}&current=temperature_2m,weather_code,apparent_temperature,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,wind_speed_10m_max,wind_gusts_10m_max,sunrise,sunset,uv_index_max&wind_speed_unit=mph&timezone=Europe%2FLondon&forecast_days=7`;
       const w = await (await fetch(u)).json();
+      S.weather = w;
       let h = `<span class="now">${WMO(w.current.weather_code)} ${Math.round(w.current.temperature_2m)}°</span>`;
       for (let i = 0; i < 4; i++) {
         const d = new Date(w.daily.time[i] + "T12:00:00");
         h += `<div class="day">${i === 0 ? "Today" : DAYS[d.getDay()]}<br>${WMO(w.daily.weather_code[i])} ${Math.round(w.daily.temperature_2m_max[i])}°/${Math.round(w.daily.temperature_2m_min[i])}°<br>☔ ${w.daily.precipitation_probability_max[i]}%</div>`;
       }
       $("#weather").innerHTML = h;
+      $("#weather").dataset.act = "forecast";
     } catch (e) { console.warn("weather", e); }
   }
 
