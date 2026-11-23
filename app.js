@@ -1,7 +1,7 @@
 /* Family Hub — single-page app. Vanilla JS, no build step. */
 (function () {
   "use strict";
-  const APP_VERSION = "12"; // bump with version.json on every release so kiosks reload themselves
+  const APP_VERSION = "13"; // bump with version.json on every release so kiosks reload themselves
   const C = window.HUB_CONFIG;
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -311,6 +311,8 @@
     else if (act === "ev") { showTravel(S.events[+a.dataset.i]); return; }
     else if (act === "closepop") { $("#pop").remove(); if (pending) safeRender(); return; }
     else if (act === "noop") return;
+    else if (act === "themes") { showThemes(); return; }
+    else if (act === "settheme") { setTheme(a.dataset.t); showThemes(); return; }
     else if (act === "newev") { showNewEvent(a.dataset.date); return; }
     else if (act === "allday") { const on = a.classList.toggle("on"); document.querySelectorAll(".evtime").forEach((x) => (x.style.display = on ? "none" : "")); return; }
     else if (act === "saveev") { saveNewEvent(a); return; }
@@ -446,6 +448,31 @@
       setTimeout(loadEvents, 4000);              // then refresh from iCloud
     } catch (e) { $("#evErr").textContent = e.message; btn.disabled = false; btn.textContent = "Add to calendar"; }
   }
+
+  /* ---------------- themes (saved on each device separately) ---------------- */
+  const THEMES = [
+    { id: "midnight", name: "Midnight", sw: ["#14171c", "#1d2128", "#5fb3ff", "#ffd54a"] },
+    { id: "daylight", name: "Daylight", sw: ["#f3f5f8", "#ffffff", "#2f7de1", "#f2b705"] },
+    { id: "playtime", name: "Playtime", sw: ["#7cc6ef", "#fffaf0", "#ff8a3d", "#ffc93c"] },
+    { id: "garden", name: "Garden", sw: ["#1a2a20", "#22362a", "#8fd16a", "#ffd84a"] },
+  ];
+  function setTheme(t) {
+    try { localStorage.setItem("hub_theme", t); } catch (e) {}
+    document.body.dataset.theme = t;
+    const m = document.querySelector('meta[name="theme-color"]'); const th = THEMES.find((x) => x.id === t);
+    if (m && th) m.content = th.sw[0];
+  }
+  function showThemes() {
+    const cur = document.body.dataset.theme || "midnight";
+    const old = $("#pop"); if (old) old.remove();
+    const el = document.createElement("div");
+    el.id = "pop"; el.className = "pop"; el.dataset.act = "closepop";
+    el.innerHTML = `<div class="popc" data-act="noop"><h2>🎨 Theme</h2><p class="empty">Saved on this device only.</p><div class="themes">` +
+      THEMES.map((t) => `<button class="theme ${t.id === cur ? "on" : ""}" data-act="settheme" data-t="${t.id}" style="background:${t.sw[1]};color:${t.id === "midnight" || t.id === "garden" ? "#eef1f5" : "#1f2a3a"}">${t.name}<span class="sw">${t.sw.map((c) => `<i style="background:${c}"></i>`).join("")}</span></button>`).join("") +
+      `</div><div class="popb"><button class="btn primary" data-act="closepop">Done</button></div></div>`;
+    document.body.appendChild(el);
+  }
+  try { setTheme(localStorage.getItem("hub_theme") || "midnight"); } catch (e) {}
 
   function cheer() {
     const el = document.createElement("div");
