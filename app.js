@@ -1,7 +1,7 @@
 /* Family Hub — single-page app. Vanilla JS, no build step. */
 (function () {
   "use strict";
-  const APP_VERSION = "14"; // bump with version.json on every release so kiosks reload themselves
+  const APP_VERSION = "15"; // bump with version.json on every release so kiosks reload themselves
   const C = window.HUB_CONFIG;
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -41,6 +41,13 @@
     async addChore(c) { const a = Local._get("chores", []); a.push({ id: uid(), sort: a.length + 1, ...c }); Local._set("chores", a); },
     async deleteChore(id) { Local._set("chores", Local._get("chores", []).filter((c) => c.id !== id)); },
     async updateChore(id, patch) { Local._set("chores", Local._get("chores", []).map((c) => (c.id === id ? { ...c, ...patch } : c))); },
+    async photos() { return Local._get("photos", []); },
+    async addPhoto(blob) {
+      const url = await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+      const a = Local._get("photos", []); a.unshift({ id: uid(), url, created_at: new Date().toISOString() });
+      try { Local._set("photos", a); } catch (e) { throw new Error("Demo mode storage is full"); }
+    },
+    async deletePhoto(id) { Local._set("photos", Local._get("photos", []).filter((p) => p.id !== id)); },
     async createEvent(ev) { const a = Local._get("myevents", []); a.push({ ...ev, calendar: ev.calendar || "Family" }); Local._set("myevents", a); },
     async setHandoff(kind, payload) { Local._set("handoff", { kind, payload, created_at: new Date().toISOString() }); },
     async choreLog(from) { return Local._get("chore_log", []).filter((l) => l.date >= from); },
@@ -79,7 +86,7 @@
       const connect = () => {
         clearTimeout(retry);
         if (ch) Cloud.sb.removeChannel(ch);
-        ch = Cloud.sb.channel("hub-" + Date.now()).on("postgres_changes", { event: "*", schema: "public" }, deb)
+        ch = Cloud.sb.channel("hub-" + Date.now()).on("postgres_changes", { event: "*", schema: "public" }, (p) => { if (p.table === "presence") window.hubPresence && window.hubPresence(); else deb(); })
           .subscribe((st) => {
             if (st === "SUBSCRIBED") { setSync("ok"); cb(); } // catch anything missed while disconnected
             else if (st === "CHANNEL_ERROR" || st === "TIMED_OUT" || st === "CLOSED") { setSync("err"); retry = setTimeout(connect, 5000); }
@@ -106,6 +113,27 @@
       if (err || (data && data.error)) throw new Error(err || data.error);
       return data;
     },
+    async photos() {
+      const { data, error } = await Cloud.sb.storage.from("photos").list("", { limit: 1000, sortBy: { column: "created_at", order: "desc" } });
+      if (error) throw error;
+      const files = (data || []).filter((f) => f.id && !f.name.startsWith("."));
+      let cache = {}; try { cache = JSON.parse(localStorage.getItem("hub_photo_urls")) || {}; } catch (e) {}
+      const soon = Date.now() + 864e5, need = files.map((f) => f.name).filter((n) => !cache[n] || cache[n].exp < soon);
+      if (need.length) {
+        const { data: signed, error: e2 } = await Cloud.sb.storage.from("photos").createSignedUrls(need, 7 * 86400);
+        if (e2) throw e2;
+        signed.forEach((x) => { if (x.signedUrl) cache[x.path] = { url: x.signedUrl, exp: Date.now() + 7 * 864e5 }; });
+      }
+      const keep = {}; files.forEach((f) => { if (cache[f.name]) keep[f.name] = cache[f.name]; });
+      try { localStorage.setItem("hub_photo_urls", JSON.stringify(keep)); } catch (e) {}
+      return files.filter((f) => keep[f.name]).map((f) => ({ id: f.name, url: keep[f.name].url, created_at: f.created_at }));
+    },
+    async addPhoto(blob) {
+      const name = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+      const { error } = await Cloud.sb.storage.from("photos").upload(name, blob, { contentType: "image/jpeg", cacheControl: "604800" });
+      if (error) throw error;
+    },
+    async deletePhoto(id) { const { error } = await Cloud.sb.storage.from("photos").remove([id]); if (error) throw error; },
     async setHandoff(kind, payload) { await Cloud._q(Cloud.sb.from("handoff").upsert({ id: 1, kind, payload, created_at: new Date().toISOString() })); },
     async choreLog(from) { return Cloud._q(Cloud.sb.from("chore_log").select("*").gte("date", from)); },
     async toggleChore(chore_id, date) {
@@ -188,6 +216,7 @@
       if (v === "calendar") m.innerHTML = viewWeek();
       if (v === "chores") m.innerHTML = await viewChores(false);
       if (v === "shopping" || v === "todo") m.innerHTML = await viewList(v, false);
+      if (v === "photos") m.innerHTML = await viewPhotos();
       if (DB.mode === "demo") setSync("demo");
     } catch (e) {
       console.error(e);
@@ -263,6 +292,42 @@
     return `<div class="card">${head}<div class="chores">${tiles}</div></div><div class="card" style="margin-top:18px">${chart}</div><div class="manage">${manage}</div>`;
   }
 
+  async function viewPhotos() {
+    const ph = await DB.photos(); S.photos = ph;
+    const grid = ph.map((p) => `<div class="ph"><img loading="lazy" src="${esc(p.url)}" alt=""><button class="phdel ${S.delArm === p.id ? "arm" : ""}" data-act="delphoto" data-id="${esc(p.id)}">${S.delArm === p.id ? "Delete?" : "✕"}</button></div>`).join("");
+    return `<div class="card"><h2>🖼️ Photos<span class="spacer"></span><span class="pill">${ph.length}</span>
+        ${ph.length ? `<button class="btn" data-act="slideshow">▶ Preview frame</button>` : ""}
+        <label class="btn primary upl">＋ Add photos<input id="photoIn" type="file" accept="image/*" multiple></label></h2>
+      <p class="empty" id="upMsg">Add photos from your phone. They're shrunk before upload and shown on the hub when it's idle. Change idle mode in ⚙︎ Settings.</p>
+      <div class="phgrid">${grid || '<div class="empty">No photos yet.</div>'}</div></div>`;
+  }
+
+  // Shrink to max 2048px JPEG so uploads are quick and storage lasts (HEIC from iPhone is converted too)
+  function shrink(file, max = 2048) {
+    return new Promise((resolve, reject) => {
+      const img = new Image(), u = URL.createObjectURL(file);
+      img.onload = () => {
+        const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement("canvas"); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(u);
+        c.toBlob((b) => (b ? resolve(b) : reject(new Error("Couldn't read image"))), "image/jpeg", 0.85);
+      };
+      img.onerror = () => { URL.revokeObjectURL(u); reject(new Error("Couldn't read " + file.name)); };
+      img.src = u;
+    });
+  }
+  document.addEventListener("change", async (e) => {
+    if (e.target.id !== "photoIn") return;
+    const files = [...e.target.files]; if (!files.length) return;
+    let done = 0, failed = 0;
+    for (const f of files) {
+      $("#upMsg").textContent = `Uploading ${done + failed + 1} of ${files.length}…`;
+      try { await DB.addPhoto(await shrink(f, DB.mode === "demo" ? 800 : 2048)); done++; } catch (err) { console.warn(err); failed++; }
+    }
+    toast(`Added ${done} photo${done === 1 ? "" : "s"}${failed ? ` · ${failed} failed` : ""}`);
+    S.photoList = null; render();
+  });
+
   async function viewList(list, mini) {
     const items = await DB.items(list);
     const open = items.filter((i) => !i.done), ticked = items.filter((i) => i.done);
@@ -313,6 +378,13 @@
     else if (act === "noop") return;
     else if (act === "forecast") { showForecast(); return; }
     else if (act === "themes") { showThemes(); return; }
+    else if (act === "idlemode") { setPref("hub_idle_mode", a.dataset.m); showThemes(); return; }
+    else if (act === "slidesecs") { setPref("hub_slide_secs", a.dataset.s); showThemes(); return; }
+    else if (act === "slideshow") { S.forceFrame = true; lastTouch = 0; startSaver(); return; }
+    else if (act === "delphoto") {
+      if (S.delArm !== id) { S.delArm = id; clearTimeout(S.delT); S.delT = setTimeout(() => { S.delArm = null; safeRender(); }, 4000); }
+      else { S.delArm = null; await DB.deletePhoto(id); S.photoList = null; toast("Photo deleted"); }
+    }
     else if (act === "settheme") { setTheme(a.dataset.t); showThemes(); return; }
     else if (act === "newev") { showNewEvent(a.dataset.date); return; }
     else if (act === "allday") { const on = a.classList.toggle("on"); document.querySelectorAll(".evtime").forEach((x) => (x.style.display = on ? "none" : "")); return; }
@@ -494,12 +566,21 @@
     const old = $("#pop"); if (old) old.remove();
     const el = document.createElement("div");
     el.id = "pop"; el.className = "pop"; el.dataset.act = "closepop";
-    el.innerHTML = `<div class="popc" data-act="noop"><h2>🎨 Theme</h2><p class="empty">Saved on this device only.</p><div class="themes">` +
+    const mode = pref("hub_idle_mode", "photos"), secs = pref("hub_slide_secs", "20");
+    el.innerHTML = `<div class="popc" data-act="noop"><h2>⚙︎ Settings</h2><p class="empty">Saved on this device only.</p>
+      <h3 class="sh">When the hub is idle</h3>
+      <div class="seg"><button class="${mode === "photos" ? "on" : ""}" data-act="idlemode" data-m="photos">🖼️ Picture frame<small>Photos rotate until someone touches the screen</small></button>
+        <button class="${mode === "clock" ? "on" : ""}" data-act="idlemode" data-m="clock">🕐 Clock + sensor<small>Dim clock; wakes when the sensor sees someone</small></button></div>
+      ${mode === "photos" ? `<div class="seg sm"><span>Change photo every</span>${["10", "20", "60"].map((x) => `<button class="${secs === x ? "on" : ""}" data-act="slidesecs" data-s="${x}">${x}s</button>`).join("")}</div>` : ""}
+      <p class="empty">Overnight (${C.NIGHT_START}–${C.NIGHT_END}) it always shows the dim clock.</p>
+      <h3 class="sh">Theme</h3><div class="themes">` +
       THEMES.map((t) => `<button class="theme ${t.id === cur ? "on" : ""}" data-act="settheme" data-t="${t.id}" style="background:${t.sw[1]};color:${t.id === "midnight" || t.id === "garden" ? "#eef1f5" : "#1f2a3a"}">${t.name}<span class="sw">${t.sw.map((c) => `<i style="background:${c}"></i>`).join("")}</span></button>`).join("") +
       `</div><div class="popb"><button class="btn primary" data-act="closepop">Done</button></div></div>`;
     document.body.appendChild(el);
   }
   try { setTheme(localStorage.getItem("hub_theme") || "midnight"); } catch (e) {}
+  function pref(k, d) { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }
+  function setPref(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 
   function cheer() {
     const el = document.createElement("div");
@@ -553,14 +634,48 @@
   const minsOf = (s) => { const [h, m] = s.split(":").map(Number); return h * 60 + m; };
   function isNight() { const n = new Date(), m = n.getHours() * 60 + n.getMinutes(), a = minsOf(C.NIGHT_START), b = minsOf(C.NIGHT_END); return a > b ? m >= a || m < b : m >= a && m < b; }
   const isPhone = () => window.matchMedia("(max-width: 760px)").matches;
+  // Idle screen: picture frame (touch to wake) or dim clock (presence sensor wakes it). Night = always clock.
   function checkIdle() {
-    if (isPhone()) { $("#saver").classList.add("hidden"); return; } // clock screen is for the wall hub only
+    if (isPhone() && !S.forceFrame) { stopSaver(); return; } // wall hub only (preview allowed on phones)
     const idle = Date.now() - lastTouch > C.IDLE_MINUTES * 60000;
-    $("#saver").classList.toggle("hidden", !(idle || (isNight() && Date.now() - lastTouch > 60000)));
+    if (S.forceFrame || idle || (isNight() && Date.now() - lastTouch > 60000)) startSaver(); else stopSaver();
   }
-  function wake() { lastTouch = Date.now(); $("#saver").classList.add("hidden"); }
+  async function photoList() {
+    if (!S.photoList || Date.now() - S.photoAt > 30 * 60000) {
+      try { S.photoList = (await DB.photos()).map((p) => p.url); S.photoAt = Date.now(); } catch (e) { S.photoList = S.photoList || []; }
+    }
+    return S.photoList;
+  }
+  async function startSaver() {
+    const sv = $("#saver"); sv.classList.remove("hidden");
+    const frame = S.forceFrame || (pref("hub_idle_mode", "photos") === "photos" && !isNight());
+    const list = frame ? await photoList() : [];
+    const on = frame && list.length > 0;
+    sv.classList.toggle("photo", on);
+    if (on && !S.slideT) { nextSlide(); S.slideT = setInterval(nextSlide, +pref("hub_slide_secs", "20") * 1000); }
+    if (!on && S.slideT) { clearInterval(S.slideT); S.slideT = null; }
+  }
+  function stopSaver() {
+    $("#saver").classList.add("hidden");
+    if (S.slideT) { clearInterval(S.slideT); S.slideT = null; }
+  }
+  function nextSlide() {
+    const list = S.photoList || []; if (!list.length) return;
+    if (!S.order || !S.order.length) S.order = list.map((_, i) => i).sort(() => Math.random() - 0.5); // shuffle each pass
+    const url = list[S.order.pop()] || list[0];
+    const pre = new Image();
+    pre.onload = () => {
+      const slides = document.querySelectorAll("#saver .slide"), cur = S.slideIx = 1 - (S.slideIx || 0);
+      slides[cur].innerHTML = `<div class="sbg" style="background-image:url('${url.replace(/'/g, "%27")}')"></div><img src="${esc(url)}" alt="">`;
+      slides[cur].classList.add("show"); slides[1 - cur].classList.remove("show");
+    };
+    pre.src = url;
+  }
+  function wake() { lastTouch = Date.now(); S.forceFrame = false; stopSaver(); }
   ["touchstart", "mousedown", "keydown"].forEach((ev) => document.addEventListener(ev, wake, { passive: true }));
-  window.hubWake = wake; // hook for presence sensor (phase 3)
+  window.hubWake = wake;
+  // Sensor (ESP32 writes to the presence table): wakes the clock screen; picture frame keeps rotating until touched.
+  window.hubPresence = () => { if (pref("hub_idle_mode", "photos") === "clock" && !S.forceFrame) wake(); };
 
   // Ask the browser to keep the screen on (supported in recent iPadOS Safari; Guided Access is the backstop).
   async function keepAwake() { try { if ("wakeLock" in navigator) await navigator.wakeLock.request("screen"); } catch (e) {} }

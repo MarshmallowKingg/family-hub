@@ -231,3 +231,29 @@ table.fc .fd{font-weight:600;width:80px}.fc .fi{font-size:26px;width:36px}.fc .f
 .tbar{position:relative;height:8px;border-radius:4px;background:var(--panel2)}
 .tbar i{position:absolute;top:0;bottom:0;border-radius:4px;background:linear-gradient(90deg,#5fb3ff,#ffb347)}
 @media (max-width:760px){ .popc.wide{width:auto} .fc .fx,.fc .fb,.fc .fw span{display:none} table.fc td{padding:9px 3px;font-size:14px} }
+
+/* ---------------- photos + picture frame ---------------- */
+.upl{position:relative;overflow:hidden}.upl input{position:absolute;inset:0;opacity:0;font-size:200px;cursor:pointer}
+.phgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.ph{position:relative;aspect-ratio:1;border-radius:14px;overflow:hidden;background:var(--panel2)}
+.ph img{width:100%;height:100%;object-fit:cover;display:block}
+.phdel{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.55);color:#fff;border-radius:999px;padding:4px 10px;font-size:14px}
+.phdel.arm{background:#e5484d}
+.saver .slides{position:absolute;inset:0;display:none}
+.saver.photo .slides{display:block}
+.slide{position:absolute;inset:0;opacity:0;transition:opacity 1.6s ease;overflow:hidden}
+.slide.show{opacity:1}
+.slide .sbg{position:absolute;inset:-40px;background-size:cover;background-position:center;filter:blur(30px) brightness(.55)}
+.slide img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.saver.photo{justify-content:flex-end;align-items:flex-start;padding:0 0 28px 36px}
+.saver.photo .saver-time,.saver.photo .saver-date,.saver.photo .saver-next{position:relative;z-index:2;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.7)}
+.saver.photo .saver-time{font-size:72px;font-weight:300;line-height:1}
+.saver.photo .saver-date{font-size:22px}.saver.photo .saver-next{margin-top:6px;font-size:18px;color:#eee}
+.sh{font-size:16px;margin:16px 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.seg{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.seg button{flex:1;text-align:left;padding:12px 14px;border-radius:14px;background:var(--panel2);border:3px solid transparent;font-weight:600}
+.seg button small{display:block;font-weight:400;color:var(--muted);font-size:13px;margin-top:3px}
+.seg button.on{border-color:var(--accent)}
+.seg.sm{margin-top:10px}.seg.sm span{color:var(--muted)}.seg.sm button{flex:0 0 auto;padding:8px 14px}
+.popc{max-height:90vh;overflow:auto}
+@media (max-width:760px){ .phgrid{grid-template-columns:repeat(3,1fr);gap:6px} .rail button{font-size:10px} .rail button span{font-size:22px} }

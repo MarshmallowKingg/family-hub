@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-512.png">
 <title>Family Hub</title>
-<link rel="stylesheet" href="styles.css?v=14">
+<link rel="stylesheet" href="styles.css?v=15">
 </head>
 <body>
 <div id="app">
@@ -19,7 +19,7 @@
     <div class="clock"><span id="time">--:--</span><span id="date"></span></div>
     <div id="weather" class="weather"></div>
     <div id="sync" class="sync" title="Sync status"></div>
-    <button class="gear" data-act="themes" title="Theme">⚙︎</button>
+    <button class="gear" data-act="themes" title="Settings">⚙︎</button>
   </header>
   <nav class="rail">
     <button data-view="home" class="active"><span>🏠</span>Home</button>
@@ -27,11 +27,13 @@
     <button data-view="chores"><span>⭐</span>Chores</button>
     <button data-view="shopping"><span>🛒</span>Shopping</button>
     <button data-view="todo"><span>✅</span>To-do</button>
+    <button data-view="photos"><span>🖼️</span>Photos</button>
   </nav>
   <main id="main"></main>
 </div>
 
 <div id="saver" class="saver hidden">
+  <div class="slides"><div class="slide"></div><div class="slide"></div></div>
   <div class="saver-time" id="saverTime"></div>
   <div class="saver-date" id="saverDate"></div>
   <div class="saver-next" id="saverNext"></div>
@@ -48,9 +50,9 @@
   </form>
 </div>
 
-<script src="config.js?v=14"></script>
+<script src="config.js?v=15"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="qrcode.js"></script>
-<script src="app.js?v=14"></script>
+<script src="app.js?v=15"></script>
 </body>
 </html>

@@ -81,3 +81,12 @@ alter table handoff enable row level security;
 drop policy if exists "family" on handoff;
 create policy "family" on handoff for all to authenticated using (true) with check (true);
 grant select, insert, update, delete on handoff to authenticated;
+
+-- v4: photos for the picture frame (private bucket, family login only)
+insert into storage.buckets (id, name, public) values ('photos', 'photos', false) on conflict (id) do nothing;
+drop policy if exists "family photos read" on storage.objects;
+drop policy if exists "family photos add" on storage.objects;
+drop policy if exists "family photos delete" on storage.objects;
+create policy "family photos read"   on storage.objects for select to authenticated using (bucket_id = 'photos');
+create policy "family photos add"    on storage.objects for insert to authenticated with check (bucket_id = 'photos');
+create policy "family photos delete" on storage.objects for delete to authenticated using (bucket_id = 'photos');
