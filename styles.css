@@ -18,7 +18,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .clock{display:flex;align-items:baseline;gap:14px}
 #time{font-size:40px;font-weight:700;font-variant-numeric:tabular-nums}
 #date{font-size:20px;color:var(--muted)}
-.weather{margin-left:auto;display:flex;gap:18px;align-items:center;font-size:18px}
+.energy{margin-left:auto;display:flex;gap:6px;cursor:pointer}
+.weather{display:flex;gap:18px;align-items:center;font-size:18px}
 .weather .now{font-size:26px;font-weight:600}
 .weather .day{color:var(--muted);text-align:center;font-size:14px}
 .sync{width:12px;height:12px;border-radius:50%;background:var(--muted)}
@@ -257,3 +258,15 @@ table.fc .fd{font-weight:600;width:80px}.fc .fi{font-size:26px;width:36px}.fc .f
 .seg.sm{margin-top:10px}.seg.sm span{color:var(--muted)}.seg.sm button{flex:0 0 auto;padding:8px 14px}
 .popc{max-height:90vh;overflow:auto}
 @media (max-width:760px){ .phgrid{grid-template-columns:repeat(3,1fr);gap:6px} .rail button{font-size:10px} .rail button span{font-size:22px} }
+
+/* ---------------- energy ---------------- */
+.epill{background:var(--panel2);border-radius:999px;padding:6px 11px;font-size:15px;font-weight:600;white-space:nowrap}
+.epill .exp{color:var(--good)}.epill .imp{color:var(--warn)}
+.eflow{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.enode{background:var(--panel2);border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;gap:4px}
+.enode .big{font-size:30px;font-weight:700}
+.enode small{color:var(--muted);font-size:14px}
+.enode.sun .big{color:#ffb000}.enode.grid.exp .big{color:var(--good)}.enode.grid.imp .big{color:var(--warn)}
+.soc{height:14px;border-radius:7px;background:var(--line);overflow:hidden;margin:8px 0 4px}
+.soc i{display:block;height:100%;background:linear-gradient(90deg,#3bb273,#8fd16a)}
+@media (max-width:760px){ .energy .epill:not(:first-child){display:none} .epill{font-size:13px;padding:4px 8px} .eflow{grid-template-columns:1fr} }

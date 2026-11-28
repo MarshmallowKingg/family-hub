@@ -1,7 +1,7 @@
 /* Family Hub — single-page app. Vanilla JS, no build step. */
 (function () {
   "use strict";
-  const APP_VERSION = "15"; // bump with version.json on every release so kiosks reload themselves
+  const APP_VERSION = "16"; // bump with version.json on every release so kiosks reload themselves
   const C = window.HUB_CONFIG;
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -41,6 +41,7 @@
     async addChore(c) { const a = Local._get("chores", []); a.push({ id: uid(), sort: a.length + 1, ...c }); Local._set("chores", a); },
     async deleteChore(id) { Local._set("chores", Local._get("chores", []).filter((c) => c.id !== id)); },
     async updateChore(id, patch) { Local._set("chores", Local._get("chores", []).map((c) => (c.id === id ? { ...c, ...patch } : c))); },
+    async energy() { const h = new Date().getHours(), sun = h > 7 && h < 16 ? 2400 : 0; return { solarW: sun, homeW: 640, gridW: sun ? 900 : -120, batteryW: sun ? 860 : -520, soc: 78, solarTodayKWh: 9.4, updated: "demo" }; },
     async photos() { return Local._get("photos", []); },
     async addPhoto(blob) {
       const url = await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
@@ -111,6 +112,12 @@
       const { data, error } = await Cloud.sb.functions.invoke("icloud-calendar", { body: { action: "create", event: ev } });
       let err = error && error.message; if (error) { try { err = (await error.context.json()).error || err; } catch (x) {} }
       if (err || (data && data.error)) throw new Error(err || data.error);
+      return data;
+    },
+    async energy() {
+      const { data, error } = await Cloud.sb.functions.invoke("energy", { body: {} });
+      let err = error && error.message; if (error) { try { err = (await error.context.json()).error || err; } catch (x) {} }
+      if (err) throw new Error(err);
       return data;
     },
     async photos() {
@@ -377,6 +384,7 @@
     else if (act === "closepop") { $("#pop").remove(); if (pending) safeRender(); return; }
     else if (act === "noop") return;
     else if (act === "forecast") { showForecast(); return; }
+    else if (act === "energy") { showEnergy(); return; }
     else if (act === "themes") { showThemes(); return; }
     else if (act === "idlemode") { setPref("hub_idle_mode", a.dataset.m); showThemes(); return; }
     else if (act === "slidesecs") { setPref("hub_slide_secs", a.dataset.s); showThemes(); return; }
@@ -520,6 +528,38 @@
       S.events = [...S.events, ev]; render();   // show it straight away
       setTimeout(loadEvents, 4000);              // then refresh from iCloud
     } catch (e) { $("#evErr").textContent = e.message; btn.disabled = false; btn.textContent = "Add to calendar"; }
+  }
+
+  /* ---------------- solar / battery / grid (SolaX) ---------------- */
+  const kw = (w) => (Math.abs(w) >= 1000 ? (Math.abs(w) / 1000).toFixed(1) + " kW" : Math.round(Math.abs(w)) + " W");
+  async function energy() {
+    try { S.energy = await DB.energy(); S.energyErr = null; } catch (e) { S.energyErr = e.message; }
+    const e = S.energy, el = $("#energy");
+    if (!e) { el.innerHTML = S.energyErr && /not set/.test(S.energyErr) ? "" : `<span class="epill">⚡ –</span>`; return; }
+    const g = e.gridW > 30 ? `<span class="exp">↑ ${kw(e.gridW)}</span>` : e.gridW < -30 ? `<span class="imp">↓ ${kw(e.gridW)}</span>` : "";
+    el.innerHTML = `<span class="epill">☀️ ${kw(e.solarW)}</span>${e.soc != null ? `<span class="epill">🔋 ${Math.round(e.soc)}%</span>` : ""}${g ? `<span class="epill">🔌 ${g}</span>` : ""}`;
+    if ($("#pop.energy")) showEnergy();
+  }
+  function showEnergy() {
+    const e = S.energy;
+    const old = $("#pop"); if (old) old.remove();
+    const el = document.createElement("div");
+    el.id = "pop"; el.className = "pop energy"; el.dataset.act = "closepop";
+    if (!e) { el.innerHTML = `<div class="popc" data-act="noop"><h2>⚡ Energy</h2><p class="err">${esc(S.energyErr || "No data yet")}</p><div class="popb"><button class="btn primary" data-act="closepop">Close</button></div></div>`; document.body.appendChild(el); return; }
+    const flow = (w, pos, neg, idle) => (w > 30 ? pos : w < -30 ? neg : idle);
+    const batt = flow(e.batteryW, `Charging ${kw(e.batteryW)}`, `Powering home ${kw(e.batteryW)}`, "Idle");
+    const grid = flow(e.gridW, `Exporting ${kw(e.gridW)}`, `Importing ${kw(e.gridW)}`, "Idle");
+    const socBar = e.soc != null ? `<div class="soc"><i style="width:${Math.max(0, Math.min(100, e.soc))}%"></i></div>` : "";
+    el.innerHTML = `<div class="popc wide" data-act="noop"><h2>⚡ Home energy</h2>
+      <div class="eflow">
+        <div class="enode sun"><b>☀️ Solar</b><span class="big">${kw(e.solarW)}</span><small>${e.solarTodayKWh.toFixed(1)} kWh today</small></div>
+        <div class="enode home"><b>🏠 Home using</b><span class="big">${kw(e.homeW)}</span><small>${e.solarW > e.homeW ? "Covered by solar" : e.batteryW < -30 ? "Running on battery" : e.gridW < -30 ? "Topping up from grid" : ""}</small></div>
+        <div class="enode bat"><b>🔋 Battery${e.soc != null ? " " + Math.round(e.soc) + "%" : ""}</b>${socBar}<small>${batt}</small></div>
+        <div class="enode grid ${e.gridW < -30 ? "imp" : e.gridW > 30 ? "exp" : ""}"><b>🔌 Grid</b><span class="big">${e.gridW > 30 || e.gridW < -30 ? kw(e.gridW) : "0 W"}</span><small>${grid}</small></div>
+      </div>
+      <p class="empty">SolaX updates about every 5 minutes${e.updated ? " · last reading " + esc(String(e.updated).slice(11, 16) || e.updated) : ""}.</p>
+      <div class="popb"><button class="btn primary" data-act="closepop">Close</button></div></div>`;
+    document.body.appendChild(el);
   }
 
   /* ---------------- 7-day forecast popup ---------------- */
@@ -689,6 +729,7 @@
     keepAwake();
     tick(); setInterval(tick, 1000 * 15);
     weather(); setInterval(weather, 30 * 60000);
+    energy(); setInterval(energy, 2 * 60000);
     await loadEvents(); setInterval(loadEvents, C.CALENDAR_REFRESH_MIN * 60000);
     setInterval(safeRender, 60000);                 // safety net: re-read lists/chores every minute
     setInterval(checkVersion, 5 * 60000);           // pick up new releases automatically

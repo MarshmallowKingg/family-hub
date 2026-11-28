@@ -36,3 +36,6 @@ In demo mode, data stays on that one device and the sync dot is orange.
 
 ## 5. Journey times (Google Routes API)
 Function `travel`, with secrets `GOOGLE_MAPS_KEY` (an API key restricted to the Routes API) and `HOME_ADDRESS`.
+
+## 6. Energy (SolaX Cloud)
+Function `energy`, with secrets `SOLAX_TOKEN` (from SolaX Cloud API → TokenID) and `SOLAX_SN` (the dongle's registration number).

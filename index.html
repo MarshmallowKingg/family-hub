@@ -11,12 +11,13 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-512.png">
 <title>Family Hub</title>
-<link rel="stylesheet" href="styles.css?v=15">
+<link rel="stylesheet" href="styles.css?v=16">
 </head>
 <body>
 <div id="app">
   <header class="top">
     <div class="clock"><span id="time">--:--</span><span id="date"></span></div>
+    <div id="energy" class="energy" data-act="energy"></div>
     <div id="weather" class="weather"></div>
     <div id="sync" class="sync" title="Sync status"></div>
     <button class="gear" data-act="themes" title="Settings">⚙︎</button>
@@ -50,9 +51,9 @@
   </form>
 </div>
 
-<script src="config.js?v=15"></script>
+<script src="config.js?v=16"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="qrcode.js"></script>
-<script src="app.js?v=15"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>
