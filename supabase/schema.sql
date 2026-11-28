@@ -90,3 +90,27 @@ drop policy if exists "family photos delete" on storage.objects;
 create policy "family photos read"   on storage.objects for select to authenticated using (bucket_id = 'photos');
 create policy "family photos add"    on storage.objects for insert to authenticated with check (bucket_id = 'photos');
 create policy "family photos delete" on storage.objects for delete to authenticated using (bucket_id = 'photos');
+
+-- v5: force-charge windows (Octopus free sessions etc.) + private key store for the SolaX token
+create table if not exists charge_windows (
+  id uuid primary key default gen_random_uuid(),
+  start_at timestamptz not null,
+  end_at timestamptz not null,
+  power_w int not null default 3000,
+  status text not null default 'scheduled' check (status in ('scheduled','active','done','cancel','cancelled','error')),
+  note text,
+  tries int not null default 0,
+  created_at timestamptz not null default now()
+);
+alter table charge_windows enable row level security;
+drop policy if exists "family" on charge_windows;
+create policy "family" on charge_windows for all to authenticated using (true) with check (true);
+grant select, insert, update, delete on charge_windows to authenticated;
+do $$ begin
+  if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and tablename='charge_windows') then
+    alter publication supabase_realtime add table public.charge_windows;
+  end if;
+end $$;
+
+create table if not exists kv (key text primary key, value text not null, expires_at timestamptz);
+alter table kv enable row level security;  -- no policies: only server functions can read it

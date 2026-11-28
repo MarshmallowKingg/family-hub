@@ -270,3 +270,11 @@ table.fc .fd{font-weight:600;width:80px}.fc .fi{font-size:26px;width:36px}.fc .f
 .soc{height:14px;border-radius:7px;background:var(--line);overflow:hidden;margin:8px 0 4px}
 .soc i{display:block;height:100%;background:linear-gradient(90deg,#3bb273,#8fd16a)}
 @media (max-width:760px){ .energy .epill:not(:first-child){display:none} .epill{font-size:13px;padding:4px 8px} .eflow{grid-template-columns:1fr} }
+
+.cwform{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0 4px}
+.cwform input,.cwform select{font:inherit;padding:9px 10px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--text)}
+.cwform label{display:flex;align-items:center;gap:6px;color:var(--muted)}
+.cw{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:11px 13px;border-radius:12px;background:var(--panel2);margin-bottom:8px;border-left:5px solid var(--line)}
+.cw small{display:block;color:var(--muted);font-size:13px;margin-top:2px}
+.cw.active{border-left-color:var(--good)}.cw.scheduled{border-left-color:var(--accent)}.cw.error{border-left-color:#e5484d}
+.cw.done,.cw.cancelled{opacity:.6}

@@ -1,7 +1,7 @@
 /* Family Hub — single-page app. Vanilla JS, no build step. */
 (function () {
   "use strict";
-  const APP_VERSION = "16"; // bump with version.json on every release so kiosks reload themselves
+  const APP_VERSION = "17"; // bump with version.json on every release so kiosks reload themselves
   const C = window.HUB_CONFIG;
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -42,6 +42,10 @@
     async deleteChore(id) { Local._set("chores", Local._get("chores", []).filter((c) => c.id !== id)); },
     async updateChore(id, patch) { Local._set("chores", Local._get("chores", []).map((c) => (c.id === id ? { ...c, ...patch } : c))); },
     async energy() { const h = new Date().getHours(), sun = h > 7 && h < 16 ? 2400 : 0; return { solarW: sun, homeW: 640, gridW: sun ? 900 : -120, batteryW: sun ? 860 : -520, soc: 78, solarTodayKWh: 9.4, updated: "demo" }; },
+    async chargeWindows() { return Local._get("charge", []).sort((a, b) => (a.start_at < b.start_at ? -1 : 1)); },
+    async addWindow(w) { const a = Local._get("charge", []); a.push({ id: uid(), status: "scheduled", ...w }); Local._set("charge", a); },
+    async cancelWindow(w) { Local._set("charge", Local._get("charge", []).map((x) => (x.id === w.id ? { ...x, status: "cancelled" } : x))); },
+    async kickCharge() {},
     async photos() { return Local._get("photos", []); },
     async addPhoto(blob) {
       const url = await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
@@ -116,6 +120,17 @@
     },
     async energy() {
       const { data, error } = await Cloud.sb.functions.invoke("energy", { body: {} });
+      let err = error && error.message; if (error) { try { err = (await error.context.json()).error || err; } catch (x) {} }
+      if (err) throw new Error(err);
+      return data;
+    },
+    async chargeWindows() {
+      return Cloud._q(Cloud.sb.from("charge_windows").select("*").gte("end_at", new Date(Date.now() - 3 * 864e5).toISOString()).order("start_at"));
+    },
+    async addWindow(w) { await Cloud._q(Cloud.sb.from("charge_windows").insert(w)); },
+    async cancelWindow(w) { await Cloud._q(Cloud.sb.from("charge_windows").update({ status: w.status === "active" ? "cancel" : "cancelled" }).eq("id", w.id)); },
+    async kickCharge() { // run the scheduler now rather than waiting for the next minute
+      const { data, error } = await Cloud.sb.functions.invoke("charge-tick", { body: {} });
       let err = error && error.message; if (error) { try { err = (await error.context.json()).error || err; } catch (x) {} }
       if (err) throw new Error(err);
       return data;
@@ -224,6 +239,7 @@
       if (v === "chores") m.innerHTML = await viewChores(false);
       if (v === "shopping" || v === "todo") m.innerHTML = await viewList(v, false);
       if (v === "photos") m.innerHTML = await viewPhotos();
+      if (v === "energy") m.innerHTML = await viewEnergy();
       if (DB.mode === "demo") setSync("demo");
     } catch (e) {
       console.error(e);
@@ -384,7 +400,10 @@
     else if (act === "closepop") { $("#pop").remove(); if (pending) safeRender(); return; }
     else if (act === "noop") return;
     else if (act === "forecast") { showForecast(); return; }
-    else if (act === "energy") { showEnergy(); return; }
+    else if (act === "energy") { S.view = "energy"; return render(); }
+    else if (act === "cwnow") { const s = new Date(); if (!(await addWindow(s, new Date(+s + +a.dataset.m * 60000)))) return; }
+    else if (act === "cwadd") { const d = $("#cwDate").value; if (!(await addWindow(new Date(`${d}T${$("#cwStart").value}:00`), new Date(`${d}T${$("#cwEnd").value}:00`)))) return; }
+    else if (act === "cwcancel") { const w = (await DB.chargeWindows()).find((x) => x.id === id); if (w) { await DB.cancelWindow(w); DB.kickCharge().catch(() => {}); toast(w.status === "active" ? "Stopping – back to normal within a minute" : "Cancelled"); } }
     else if (act === "themes") { showThemes(); return; }
     else if (act === "idlemode") { setPref("hub_idle_mode", a.dataset.m); showThemes(); return; }
     else if (act === "slidesecs") { setPref("hub_slide_secs", a.dataset.s); showThemes(); return; }
@@ -538,7 +557,7 @@
     if (!e) { el.innerHTML = S.energyErr && /not set/.test(S.energyErr) ? "" : `<span class="epill">⚡ –</span>`; return; }
     const g = e.gridW > 30 ? `<span class="exp">↑ ${kw(e.gridW)}</span>` : e.gridW < -30 ? `<span class="imp">↓ ${kw(e.gridW)}</span>` : "";
     el.innerHTML = `<span class="epill">☀️ ${kw(e.solarW)}</span>${e.soc != null ? `<span class="epill">🔋 ${Math.round(e.soc)}%</span>` : ""}${g ? `<span class="epill">🔌 ${g}</span>` : ""}`;
-    if ($("#pop.energy")) showEnergy();
+    if (S.view === "energy") safeRender();
   }
   function showEnergy() {
     const e = S.energy;
@@ -560,6 +579,55 @@
       <p class="empty">SolaX updates about every 5 minutes${e.updated ? " · last reading " + esc(String(e.updated).slice(11, 16) || e.updated) : ""}.</p>
       <div class="popb"><button class="btn primary" data-act="closepop">Close</button></div></div>`;
     document.body.appendChild(el);
+  }
+
+  /* ---------------- Energy tab: live figures + force-charge windows ---------------- */
+  function energyCards(e) {
+    if (!e) return `<p class="err">${esc(S.energyErr || "Waiting for SolaX data…")}</p>`;
+    const flow = (w, pos, neg, idle) => (w > 30 ? pos : w < -30 ? neg : idle);
+    const socBar = e.soc != null ? `<div class="soc"><i style="width:${Math.max(0, Math.min(100, e.soc))}%"></i></div>` : "";
+    return `<div class="eflow">
+        <div class="enode sun"><b>☀️ Solar</b><span class="big">${kw(e.solarW)}</span><small>${(e.solarTodayKWh || 0).toFixed(1)} kWh today</small></div>
+        <div class="enode home"><b>🏠 Home using</b><span class="big">${kw(e.homeW)}</span><small>${e.solarW > e.homeW ? "Covered by solar" : e.batteryW < -30 ? "Running on battery" : e.gridW < -30 ? "Topping up from grid" : ""}</small></div>
+        <div class="enode bat"><b>🔋 Battery${e.soc != null ? " " + Math.round(e.soc) + "%" : ""}</b>${socBar}<small>${flow(e.batteryW, `Charging ${kw(e.batteryW)}`, `Powering home ${kw(e.batteryW)}`, "Idle")}</small></div>
+        <div class="enode grid ${e.gridW < -30 ? "imp" : e.gridW > 30 ? "exp" : ""}"><b>🔌 Grid</b><span class="big">${e.gridW > 30 || e.gridW < -30 ? kw(e.gridW) : "0 W"}</span><small>${flow(e.gridW, `Exporting ${kw(e.gridW)}`, `Importing ${kw(e.gridW)}`, "Idle")}</small></div>
+      </div><p class="empty">SolaX updates about every 5 minutes${e.updated ? " · last reading " + esc(String(e.updated).slice(11, 16) || e.updated) : ""}.</p>`;
+  }
+  const STATUS = { scheduled: "⏰ Scheduled", active: "⚡ Charging now", done: "✓ Done", cancel: "⏹ Stopping…", cancelled: "Cancelled", error: "⚠️ Failed" };
+  async function viewEnergy() {
+    const wins = await DB.chargeWindows(), n = new Date();
+    const upcoming = wins.filter((w) => ["scheduled", "active", "cancel"].includes(w.status));
+    const past = wins.filter((w) => !["scheduled", "active", "cancel"].includes(w.status)).slice(-5).reverse();
+    const fmtW = (w) => { const s = new Date(w.start_at), e = new Date(w.end_at); return `${dayLabel(s).split(" · ")[0]} ${hm(s)}–${hm(e)} · ${kw(w.power_w)}`; };
+    const row = (w, live) => `<div class="cw ${w.status}"><div><b>${fmtW(w)}</b><small>${STATUS[w.status] || w.status}${w.note ? " · " + esc(w.note) : ""}</small></div>${live ? `<button class="btn" data-act="cwcancel" data-id="${w.id}">${w.status === "active" ? "Stop" : "Cancel"}</button>` : ""}</div>`;
+    const h = Math.min(23, n.getHours() + 1), pw = pref("hub_charge_w", "3000");
+    return `<div class="grid2">
+      <div class="col"><div class="card"><h2>⚡ Home energy</h2>${energyCards(S.energy)}</div></div>
+      <div class="col"><div class="card"><h2>🔌 Charge from grid</h2>
+        <p class="empty">For Octopus free or cheap sessions. After each window the inverter goes back to its normal TOU settings.</p>
+        <div class="seg sm"><span>Charge now for</span>${[30, 60, 120].map((m) => `<button data-act="cwnow" data-m="${m}">${m < 60 ? m + " min" : m / 60 + " h"}</button>`).join("")}</div>
+        <div class="cwform">
+          <input id="cwDate" type="date" value="${ymd(n)}">
+          <label>From <input id="cwStart" type="time" value="${pad(h)}:00"></label>
+          <label>to <input id="cwEnd" type="time" value="${pad(Math.min(23, h + 1))}:00"></label>
+          <label>Power <select id="cwPow">${[1000, 1500, 2000, 2500, 3000, 3500].map((p) => `<option ${String(p) === pw ? "selected" : ""} value="${p}">${p / 1000} kW</option>`).join("")}</select></label>
+          <button class="btn primary" data-act="cwadd">＋ Schedule</button>
+        </div><p id="cwErr" class="err"></p>
+        ${upcoming.map((w) => row(w, true)).join("") || '<div class="empty">No charge windows planned.</div>'}
+        ${past.length ? `<h3 class="sh">Recent</h3>${past.map((w) => row(w, false)).join("")}` : ""}
+      </div></div></div>`;
+  }
+  async function addWindow(start, end) {
+    const power_w = +($("#cwPow") ? $("#cwPow").value : pref("hub_charge_w", "3000"));
+    setPref("hub_charge_w", String(power_w));
+    if (end <= start) { $("#cwErr").textContent = "End time must be after the start."; return false; }
+    if (end <= new Date()) { $("#cwErr").textContent = "That window has already finished."; return false; }
+    const clash = (await DB.chargeWindows()).find((w) => ["scheduled", "active"].includes(w.status) && new Date(w.start_at) < end && new Date(w.end_at) > start);
+    if (clash) { $("#cwErr").textContent = "That overlaps a window you've already planned."; return false; }
+    await DB.addWindow({ start_at: start.toISOString(), end_at: end.toISOString(), power_w });
+    toast(start <= new Date() ? "Starting – the inverter switches within a minute" : "Charge window scheduled");
+    DB.kickCharge().catch((e) => toast("⚠️ " + e.message));
+    return true;
   }
 
   /* ---------------- 7-day forecast popup ---------------- */
