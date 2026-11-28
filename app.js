@@ -1,7 +1,7 @@
 /* Family Hub — single-page app. Vanilla JS, no build step. */
 (function () {
   "use strict";
-  const APP_VERSION = "17"; // bump with version.json on every release so kiosks reload themselves
+  const APP_VERSION = "18"; // bump with version.json on every release so kiosks reload themselves
   const C = window.HUB_CONFIG;
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -595,7 +595,8 @@
   }
   const STATUS = { scheduled: "⏰ Scheduled", active: "⚡ Charging now", done: "✓ Done", cancel: "⏹ Stopping…", cancelled: "Cancelled", error: "⚠️ Failed" };
   async function viewEnergy() {
-    const wins = await DB.chargeWindows(), n = new Date();
+    let wins = [], winErr = ""; const n = new Date();
+    try { wins = await DB.chargeWindows(); } catch (e) { winErr = /charge_windows/.test(e.message) ? "Charge windows aren't set up yet – run the v5 SQL in Supabase." : e.message; }
     const upcoming = wins.filter((w) => ["scheduled", "active", "cancel"].includes(w.status));
     const past = wins.filter((w) => !["scheduled", "active", "cancel"].includes(w.status)).slice(-5).reverse();
     const fmtW = (w) => { const s = new Date(w.start_at), e = new Date(w.end_at); return `${dayLabel(s).split(" · ")[0]} ${hm(s)}–${hm(e)} · ${kw(w.power_w)}`; };
@@ -612,7 +613,7 @@
           <label>to <input id="cwEnd" type="time" value="${pad(Math.min(23, h + 1))}:00"></label>
           <label>Power <select id="cwPow">${[1000, 1500, 2000, 2500, 3000, 3500].map((p) => `<option ${String(p) === pw ? "selected" : ""} value="${p}">${p / 1000} kW</option>`).join("")}</select></label>
           <button class="btn primary" data-act="cwadd">＋ Schedule</button>
-        </div><p id="cwErr" class="err"></p>
+        </div><p id="cwErr" class="err">${esc(winErr)}</p>
         ${upcoming.map((w) => row(w, true)).join("") || '<div class="empty">No charge windows planned.</div>'}
         ${past.length ? `<h3 class="sh">Recent</h3>${past.map((w) => row(w, false)).join("")}` : ""}
       </div></div></div>`;
