@@ -9,5 +9,7 @@ window.HUB_CONFIG = {
   NIGHT_END: "06:30",
   CHILD_NAME: "Rae",
   CALENDAR_DAYS: 35,         // How far ahead to fetch iCloud events
+  // Supabase function URL names (the last part of each function's URL in Edge Functions)
+  FUNCTIONS: { calendar: "icloud-calendar", travel: "travel", energy: "smart-function", charge: "charge-tick" },
   CALENDAR_REFRESH_MIN: 3
 };

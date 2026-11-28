@@ -1,8 +1,10 @@
 /* Family Hub — single-page app. Vanilla JS, no build step. */
 (function () {
   "use strict";
-  const APP_VERSION = "18"; // bump with version.json on every release so kiosks reload themselves
+  const APP_VERSION = "19"; // bump with version.json on every release so kiosks reload themselves
   const C = window.HUB_CONFIG;
+  const FN_DEFAULT = { calendar: "icloud-calendar", travel: "travel", energy: "energy", charge: "charge-tick" };
+  const fn = (k) => (C.FUNCTIONS && C.FUNCTIONS[k]) || FN_DEFAULT[k];
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -113,13 +115,13 @@
     async deleteChore(id) { await Cloud._q(Cloud.sb.from("chores").update({ active: false }).eq("id", id)); },
     async updateChore(id, patch) { await Cloud._q(Cloud.sb.from("chores").update(patch).eq("id", id)); },
     async createEvent(ev) {
-      const { data, error } = await Cloud.sb.functions.invoke("icloud-calendar", { body: { action: "create", event: ev } });
+      const { data, error } = await Cloud.sb.functions.invoke(fn("calendar"), { body: { action: "create", event: ev } });
       let err = error && error.message; if (error) { try { err = (await error.context.json()).error || err; } catch (x) {} }
       if (err || (data && data.error)) throw new Error(err || data.error);
       return data;
     },
     async energy() {
-      const { data, error } = await Cloud.sb.functions.invoke("energy", { body: {} });
+      const { data, error } = await Cloud.sb.functions.invoke(fn("energy"), { body: {} });
       let err = error && error.message; if (error) { try { err = (await error.context.json()).error || err; } catch (x) {} }
       if (err) throw new Error(err);
       return data;
@@ -130,7 +132,7 @@
     async addWindow(w) { await Cloud._q(Cloud.sb.from("charge_windows").insert(w)); },
     async cancelWindow(w) { await Cloud._q(Cloud.sb.from("charge_windows").update({ status: w.status === "active" ? "cancel" : "cancelled" }).eq("id", w.id)); },
     async kickCharge() { // run the scheduler now rather than waiting for the next minute
-      const { data, error } = await Cloud.sb.functions.invoke("charge-tick", { body: {} });
+      const { data, error } = await Cloud.sb.functions.invoke(fn("charge"), { body: {} });
       let err = error && error.message; if (error) { try { err = (await error.context.json()).error || err; } catch (x) {} }
       if (err) throw new Error(err);
       return data;
@@ -164,7 +166,7 @@
       else await Cloud._q(Cloud.sb.from("chore_log").insert({ chore_id, date }));
     },
     async events() {
-      const { data, error } = await Cloud.sb.functions.invoke("icloud-calendar", { body: { days: C.CALENDAR_DAYS } });
+      const { data, error } = await Cloud.sb.functions.invoke(fn("calendar"), { body: { days: C.CALENDAR_DAYS } });
       if (error) {
         let msg = error.message; try { const b = await error.context.json(); msg = b.error || msg; } catch (e) {}
         S.calError = msg; return S.events || [];
@@ -464,7 +466,7 @@
       html = `<div class="mode">🚗 <b>18 min</b> <span>(demo)</span></div><div class="mode">🚶 <b>1 h 5 min</b> <span>(demo)</span></div>`;
     } else {
       const arriveBy = e.allDay ? null : e.start;
-      const { data, error } = await DB.sb.functions.invoke("travel", { body: { destination: e.location, lat: e.lat, lon: e.lon, arriveBy } });
+      const { data, error } = await DB.sb.functions.invoke(fn("travel"), { body: { destination: e.location, lat: e.lat, lon: e.lon, arriveBy } });
       let err = error && error.message; if (error) { try { err = (await error.context.json()).error || err; } catch (x) {} }
       if (err || !data) html = `<p class="err">${esc(err || "No route found")}</p>`;
       else {
