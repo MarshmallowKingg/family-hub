@@ -18,7 +18,7 @@ async function v1(token: string, sn: string) {
   let last = "";
   for (const u of urls) {
     try {
-      const j = await (await fetch(u)).json();
+      const j = await (await fetch(u, { signal: AbortSignal.timeout(10000) })).json(); // never hang the hub
       if (j?.success && j.result) return j.result;
       last = j?.exception || "No data";
     } catch (e) { last = String(e); }
