@@ -20,7 +20,9 @@ async function v1(token: string, sn: string) {
     try {
       const j = await (await fetch(u, { signal: AbortSignal.timeout(10000) })).json(); // never hang the hub
       if (j?.success && j.result) return j.result;
-      last = j?.exception || "No data";
+      // "Query success" with no data = SolaX doesn't know this serial (or the dongle is offline)
+      last = j?.success ? `no data for serial ${sn}. Use the Pocket WiFi/LAN dongle's Registration No. (not the inverter serial) and check the dongle is online in SolaX Cloud`
+        : (j?.exception || "No data");
     } catch (e) { last = String(e); }
   }
   throw new Error("SolaX: " + last);
